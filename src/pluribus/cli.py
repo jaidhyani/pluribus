@@ -29,6 +29,39 @@ def find_workspace_root(start_path: Path = None) -> Optional[Path]:
     return None
 
 
+def _parse_repo_input(repo_input: str) -> str:
+    """Parse repo input and convert GitHub format to URL if needed.
+
+    Returns:
+        Either a URL starting with http/https/git@ or a local path.
+
+    Logic:
+        - http/https/git@ URLs are returned as-is
+        - Paths starting with / or . are treated as local paths
+        - <string>/<string> that don't exist are treated as GitHub repos
+        - Otherwise treated as local paths (may not exist yet)
+    """
+    # Already a URL
+    if repo_input.startswith(("http://", "https://", "git@")):
+        return repo_input
+
+    # Absolute or relative path (starts with / or .)
+    if repo_input.startswith(("/", ".")):
+        return repo_input
+
+    # Check if it's a local path that exists
+    potential_path = Path(repo_input).resolve()
+    if potential_path.exists():
+        return str(potential_path)
+
+    # Check if it looks like owner/repo (GitHub format) - has slash but not a path prefix
+    if "/" in repo_input:
+        return f"https://github.com/{repo_input}.git"
+
+    # Otherwise treat as a bare path (error will be caught if it doesn't exist)
+    return repo_input
+
+
 @click.group()
 def cli():
     """Pluribus: Manage multiple parallel Claude Code instances."""
@@ -36,13 +69,13 @@ def cli():
 
 
 @cli.command()
-@click.argument("repo_url_or_path")
+@click.argument("repo_input", required=False)
 @click.option(
     "--path",
     default=".",
     help="Directory to initialize workspace in (default: current directory)",
 )
-def init(repo_url_or_path: str, path: str):
+def init(repo_input: Optional[str], path: str):
     """Initialize a new Pluribus workspace."""
     workspace_root = Path(path).resolve()
     workspace_root.mkdir(parents=True, exist_ok=True)
@@ -59,6 +92,16 @@ def init(repo_url_or_path: str, path: str):
     todo_file = workspace_root / "todo.md"
     if not todo_file.exists():
         todo_file.write_text("# Tasks\n\n## Example Task\nDescribe what needs to be done.\n")
+
+    # If no repo provided, prompt for it
+    if not repo_input:
+        click.echo("\n📦 Repository source:")
+        repo_input = click.prompt(
+            "Enter path/local repo, GitHub repo (owner/repo), or git URL"
+        )
+
+    # Convert GitHub repo format to URL if needed
+    repo_url_or_path = _parse_repo_input(repo_input)  # type: ignore
 
     # Determine if it's a URL or path
     if repo_url_or_path.startswith(("http://", "https://", "git@")):
