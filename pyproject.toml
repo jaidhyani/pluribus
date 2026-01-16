@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pluribus"
+name = "pluribus-ai"
 version = "0.1.0"
 description = "Manage multiple parallel Claude Code instances working on different tasks"
 readme = "README.md"
