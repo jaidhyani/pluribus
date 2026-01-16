@@ -221,4 +221,4 @@ For details on contributing and developing Pluribus, see [CLAUDE.md](CLAUDE.md).
 
 ## License
 
-[Your license here]
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
