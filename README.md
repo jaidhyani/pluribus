@@ -28,7 +28,6 @@ All coordinated through the filesystem as a single source of truth.
 
 ### Option 1: Install as User-Level Utility (Recommended)
 
-**With uv** (fast, isolated, recommended):
 ```bash
 uv tool install git+https://github.com/jaidhyani/pluribus.git
 
@@ -36,57 +35,18 @@ uv tool install git+https://github.com/jaidhyani/pluribus.git
 pluribus --help
 ```
 
-**With pip**:
-```bash
-pip install git+https://github.com/jaidhyani/pluribus.git
-
-# Now run from anywhere
-pluribus --help
-```
-
-### Option 2: Development Installation
+### Option 2: Development
 
 For developing or contributing to Pluribus:
 
-**With uv**:
 ```bash
 git clone https://github.com/jaidhyani/pluribus.git
 cd pluribus
 
-# Install in development mode
-uv pip install -e .
-
-# Now run from anywhere
-pluribus --help
-
-# Or run tests
-uv run pytest
-```
-
-**With pip**:
-```bash
-git clone https://github.com/jaidhyani/pluribus.git
-cd pluribus
-
-# Install in development mode
-pip install -e .
-
-# Now run from anywhere
-pluribus --help
-```
-
-### Option 3: Local Development with uv
-
-For quick iteration without installing globally:
-
-```bash
-git clone https://github.com/jaidhyani/pluribus.git
-cd pluribus
-
-# Install dependencies
+# Install dependencies (includes editable install of pluribus)
 uv sync
 
-# Run commands with uv
+# Run commands
 uv run pluribus --help
 uv run pytest
 ```
