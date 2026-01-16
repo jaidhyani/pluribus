@@ -102,10 +102,34 @@ All notable changes to Pluribus are documented in this file.
 
 ### Testing Notes
 
-- All 26 tests pass (18 unit + 8 e2e)
-- E2E tests use real git repos to ensure actual workflows work
-- Tests verify: config persistence, worktree isolation, change detection, task parsing
-- No integration with actual Claude Code CLI (would require mocking or actual installation)
+- All 30 tests pass (18 unit + 8 e2e + 4 integration)
+- Unit tests: Config, status file, task parsing, slug generation
+- E2E tests: Full workflows with real git repos, worktree isolation, change detection
+- Integration tests: Complex workflows, error handling, workspace detection
+- Tests use real git repositories to ensure actual workflows work
+- No dependency on actual Claude Code CLI (tests work without installation)
+
+### Implementation Refinements (Iteration 1)
+
+**UX Improvements:**
+- Made `workon` and `resume` commands graceful when Claude Code CLI not available
+- Display prompt and instructions instead of failing
+- User can manually start Claude Code after setup
+
+**Bug Fixes:**
+- Fixed worktree deletion to handle uncommitted changes gracefully
+- Used `--force` flag in `git worktree remove` for robustness
+- Improved display module to show task_id as fallback when task_name not set
+
+**Testing Enhancements:**
+- Added 4 integration tests covering real workflows
+- Tests verify handling of complex task names (special chars, paths, versions)
+- Tests confirm error handling and workspace detection work correctly
+
+**Architecture Insights:**
+- File-based coordination proved simple and effective
+- Worktree isolation provides true parallelism without complications
+- Passive monitoring approach works well; status timestamps give good visibility
 
 ## Decisions and Concerns Log
 
