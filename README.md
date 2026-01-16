@@ -26,10 +26,10 @@ All coordinated through the filesystem as a single source of truth.
 - GitHub CLI (`gh`) configured with your credentials
 - Claude Code CLI installed
 
-### Option 1: Install as User-Level Utility (Recommended)
+### Option 1: Install from PyPI (Recommended)
 
 ```bash
-uv tool install git+https://github.com/jaidhyani/pluribus.git
+uv tool install pluribus-ai
 
 # Now run from anywhere
 pluribus --help
