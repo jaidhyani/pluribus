@@ -1,0 +1,3 @@
+[pluribus]
+repo_url = "https://github.com/user/repo.git"
+# or repo_path = "/path/to/existing/repo"

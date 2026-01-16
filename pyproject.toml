@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pluribus"
+version = "0.1.0"
+description = "Manage multiple parallel Claude Code instances working on different tasks"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Jai", email = "jai@anthropic.com"}
+]
+
+dependencies = [
+    "click>=8.1.0",
+    "pyyaml>=6.0",
+    "watchdog>=3.0.0",
+    "colorama>=0.4.6",
+    "tabulate>=0.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+
+[project.scripts]
+pluribus = "pluribus.cli:main"
+
+[tool.setuptools]
+packages = ["pluribus"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+pluribus = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
