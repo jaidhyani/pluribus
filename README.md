@@ -25,19 +25,25 @@ All coordinated through the filesystem as a single source of truth.
 - Git (with support for `git worktree`)
 - GitHub CLI (`gh`) configured with your credentials
 - Claude Code CLI installed
+- [`uv`](https://docs.astral.sh/uv/) installed (fast Python package manager)
 
 ### Setup
 
 ```bash
 # Clone the repo
-git clone https://github.com/user/pluribus.git
+git clone https://github.com/jaidhyani/pluribus.git
 cd pluribus
 
-# Install in development mode
-pip install -e .
+# Install dependencies with uv
+uv sync
 
 # Verify installation
-pluribus --help
+uv run pluribus --help
+```
+
+Alternatively, if you prefer standard pip:
+```bash
+pip install -e .
 ```
 
 ## Quick Start
@@ -45,7 +51,7 @@ pluribus --help
 ### 1. Initialize a workspace
 
 ```bash
-pluribus init https://github.com/your-org/your-project.git
+uv run pluribus init https://github.com/your-org/your-project.git
 ```
 
 This creates:
@@ -75,7 +81,7 @@ Brief context about what needs to be done.
 ### 3. Start working on a task
 
 ```bash
-pluribus workon
+uv run pluribus workon
 ```
 
 Pluribus will show available tasks and prompt you to choose one. It then:
@@ -89,7 +95,7 @@ Pluribus will show available tasks and prompt you to choose one. It then:
 In another terminal:
 
 ```bash
-pluribus watch
+uv run pluribus watch
 ```
 
 This displays a live-updating table of all tasks and their status:
@@ -115,7 +121,7 @@ You can then review and merge the PR on GitHub.
 Once a task is complete and the PR is merged:
 
 ```bash
-pluribus delete "Add database migration system"
+uv run pluribus delete "Add database migration system"
 ```
 
 This removes the worktree and branch, freeing up space for other work.
@@ -137,27 +143,27 @@ This entire workflow takes about 10 minutes:
 
 ```bash
 # 30 seconds: Initialize
-pluribus init https://github.com/my-org/my-project.git
+uv run pluribus init https://github.com/my-org/my-project.git
 
 # 30 seconds: Define 3 tasks in todo.md
 # (edit file manually)
 
 # 10 seconds: Start first task
-pluribus workon
+uv run pluribus workon
 # Choose task 1; Claude starts working
 
-# 10 seconds: Start second task (parallel)
-pluribus workon
+# 10 seconds: Start second task (parallel, in another terminal)
+uv run pluribus workon
 # Choose task 2; another Claude instance starts
 
-# Monitor live
-pluribus watch
+# Monitor live (in another terminal)
+uv run pluribus watch
 
 # When first task is done (PR created):
-pluribus delete "Add database migration system"
+uv run pluribus delete "Add database migration system"
 
 # When other tasks are done, clean them up too
-pluribus delete "Add JWT authentication to API"
+uv run pluribus delete "Add JWT authentication to API"
 ```
 
 ## How It Works

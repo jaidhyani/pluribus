@@ -11,28 +11,38 @@ Pluribus is a Python CLI tool for managing multiple parallel Claude Code instanc
 # Clone the repo (already done)
 cd /home/jai/Desktop/pluribus
 
-# Install in development mode
-pip install -e .
+# Install with uv (faster, simpler)
+uv sync
 
 # Verify installation
-pluribus --help
+uv run pluribus --help
 ```
 
 ### Making Changes
 1. Edit source files in `src/pluribus/`
-2. Test locally with `pluribus <command>`
-3. Commit changes with clear messages
-4. Push to remote
+2. Test locally with `uv run pluribus <command>`
+3. Run tests with `uv run pytest`
+4. Commit changes with clear messages
+5. Push to remote
 
 ### Testing
 ```bash
+# Run all tests
+uv run pytest
+
+# Run specific test file
+uv run pytest tests/test_tasks.py
+
+# Run with coverage
+uv run pytest --cov=pluribus tests/
+
 # Test a specific command
-pluribus init /path/to/test-repo
+uv run pluribus init /path/to/test-repo
 
 # Test the full workflow in a sandbox directory
 mkdir /tmp/pluribus-test
 cd /tmp/pluribus-test
-pluribus init https://github.com/user/test-repo.git
+uv run pluribus init https://github.com/user/test-repo.git
 ```
 
 ### Code Style

@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "pluribus"
@@ -33,12 +33,8 @@ dev = [
 [project.scripts]
 pluribus = "pluribus.cli:main"
 
-[tool.setuptools]
-packages = ["pluribus"]
-package-dir = {"" = "src"}
-
-[tool.setuptools.package-data]
-pluribus = ["py.typed"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/pluribus"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -52,3 +48,12 @@ target-version = ["py39"]
 [tool.ruff]
 line-length = 100
 target-version = "py39"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
