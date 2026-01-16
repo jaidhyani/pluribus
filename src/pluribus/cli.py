@@ -177,11 +177,17 @@ def workon(task_name: Optional[str]):
             ["claude-code", str(worktree_path)],
             cwd=worktree_path,
         )
+        click.echo(f"\n✓ Work session ended for '{task_name}'")
     except FileNotFoundError:
-        click.echo("❌ Claude Code not found. Is it installed?")
-        sys.exit(1)
-
-    click.echo(f"\n✓ Work session ended for '{task_name}'")
+        click.echo("⚠️  Claude Code CLI not found. Starting with prompt instead...\n")
+        click.echo("📋 Here's your task prompt:\n")
+        click.echo(prompt)
+        click.echo("\n" + "="*60)
+        click.echo("To work on this task with Claude Code, run:")
+        click.echo(f"  cd {worktree_path}")
+        click.echo("  claude-code")
+        click.echo("="*60)
+        click.echo(f"\n✓ Worktree ready at: {worktree_path}")
 
 
 @cli.command()
@@ -224,11 +230,17 @@ def resume(task_name: str):
             ["claude-code", str(worktree_path)],
             cwd=worktree_path,
         )
+        click.echo(f"\n✓ Work session ended for '{task_name}'")
     except FileNotFoundError:
-        click.echo("❌ Claude Code not found")
-        sys.exit(1)
-
-    click.echo(f"\n✓ Work session ended for '{task_name}'")
+        click.echo("⚠️  Claude Code CLI not found. Starting with prompt instead...\n")
+        click.echo("📋 Here's your task prompt:\n")
+        click.echo(prompt)
+        click.echo("\n" + "="*60)
+        click.echo("To work on this task with Claude Code, run:")
+        click.echo(f"  cd {worktree_path}")
+        click.echo("  claude-code")
+        click.echo("="*60)
+        click.echo(f"\n✓ Ready to resume at: {worktree_path}")
 
 
 @cli.command()
