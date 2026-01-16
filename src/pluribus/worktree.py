@@ -61,9 +61,9 @@ class Worktree:
             raise WorktreeError(f"Worktree does not exist at {worktree_path}")
 
         try:
-            # Remove worktree
+            # Remove worktree (use --force to handle dirty state)
             subprocess.run(
-                ["git", "worktree", "remove", str(worktree_path)],
+                ["git", "worktree", "remove", "--force", str(worktree_path)],
                 cwd=self.repo_path,
                 check=True,
                 capture_output=True,

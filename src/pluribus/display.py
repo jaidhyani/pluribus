@@ -70,6 +70,9 @@ def get_task_status_data(task_slug: str, worktree_path: Path) -> dict:
 
     if status:
         data.update(status)
+        # Use task_id as task_name if task_name not explicitly set
+        if "task_name" not in status and "task_id" in status:
+            data["task_name"] = status["task_id"]
 
     return data
 
