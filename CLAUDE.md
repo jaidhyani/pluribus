@@ -7,25 +7,43 @@ Pluribus is a Python CLI tool for managing multiple parallel Claude Code instanc
 ## Development Workflow
 
 ### Setup
+
+**Option 1: Development with uv sync** (local development, no global installation)
 ```bash
-# Clone the repo (already done)
 cd /home/jai/Desktop/pluribus
 
-# Install with uv (faster, simpler)
+# Install dependencies
 uv sync
 
 # Verify installation
 uv run pluribus --help
+
+# Run tests
+uv run pytest
+```
+
+**Option 2: Development with editable install** (install globally, run `pluribus` from anywhere)
+```bash
+cd /home/jai/Desktop/pluribus
+
+# Install in editable mode
+uv pip install -e .
+
+# Verify installation (run from anywhere)
+pluribus --help
+pluribus init /path/to/repo
 ```
 
 ### Making Changes
 1. Edit source files in `src/pluribus/`
-2. Test locally with `uv run pluribus <command>`
-3. Run tests with `uv run pytest`
+2. Test locally with `uv run pluribus <command>` or `pluribus <command>` (if installed editable)
+3. Run tests with `uv run pytest` or `pytest` (if installed editable)
 4. Commit changes with clear messages
 5. Push to remote
 
 ### Testing
+
+**With uv sync:**
 ```bash
 # Run all tests
 uv run pytest
@@ -43,6 +61,26 @@ uv run pluribus init /path/to/test-repo
 mkdir /tmp/pluribus-test
 cd /tmp/pluribus-test
 uv run pluribus init https://github.com/user/test-repo.git
+```
+
+**With editable install:**
+```bash
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/test_tasks.py
+
+# Run with coverage
+pytest --cov=pluribus tests/
+
+# Test a specific command
+pluribus init /path/to/test-repo
+
+# Test the full workflow in a sandbox directory
+mkdir /tmp/pluribus-test
+cd /tmp/pluribus-test
+pluribus init https://github.com/user/test-repo.git
 ```
 
 ### Code Style

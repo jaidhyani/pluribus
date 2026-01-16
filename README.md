@@ -25,33 +25,80 @@ All coordinated through the filesystem as a single source of truth.
 - Git (with support for `git worktree`)
 - GitHub CLI (`gh`) configured with your credentials
 - Claude Code CLI installed
-- [`uv`](https://docs.astral.sh/uv/) installed (fast Python package manager)
 
-### Setup
+### Option 1: Install as User-Level Utility (Recommended)
 
+**With uv** (fast, isolated, recommended):
 ```bash
-# Clone the repo
+uv tool install git+https://github.com/jaidhyani/pluribus.git
+
+# Now run from anywhere
+pluribus --help
+```
+
+**With pip**:
+```bash
+pip install git+https://github.com/jaidhyani/pluribus.git
+
+# Now run from anywhere
+pluribus --help
+```
+
+### Option 2: Development Installation
+
+For developing or contributing to Pluribus:
+
+**With uv**:
+```bash
 git clone https://github.com/jaidhyani/pluribus.git
 cd pluribus
 
-# Install dependencies with uv
-uv sync
+# Install in development mode
+uv pip install -e .
 
-# Verify installation
-uv run pluribus --help
+# Now run from anywhere
+pluribus --help
+
+# Or run tests
+uv run pytest
 ```
 
-Alternatively, if you prefer standard pip:
+**With pip**:
 ```bash
+git clone https://github.com/jaidhyani/pluribus.git
+cd pluribus
+
+# Install in development mode
 pip install -e .
+
+# Now run from anywhere
+pluribus --help
+```
+
+### Option 3: Local Development with uv
+
+For quick iteration without installing globally:
+
+```bash
+git clone https://github.com/jaidhyani/pluribus.git
+cd pluribus
+
+# Install dependencies
+uv sync
+
+# Run commands with uv
+uv run pluribus --help
+uv run pytest
 ```
 
 ## Quick Start
 
+*If you installed pluribus as a user utility, just use `pluribus` command. If using local development, use `uv run pluribus` instead.*
+
 ### 1. Initialize a workspace
 
 ```bash
-uv run pluribus init https://github.com/your-org/your-project.git
+pluribus init https://github.com/your-org/your-project.git
 ```
 
 This creates:
@@ -81,7 +128,7 @@ Brief context about what needs to be done.
 ### 3. Start working on a task
 
 ```bash
-uv run pluribus workon
+pluribus workon
 ```
 
 Pluribus will show available tasks and prompt you to choose one. It then:
@@ -95,7 +142,7 @@ Pluribus will show available tasks and prompt you to choose one. It then:
 In another terminal:
 
 ```bash
-uv run pluribus watch
+pluribus watch
 ```
 
 This displays a live-updating table of all tasks and their status:
@@ -121,7 +168,7 @@ You can then review and merge the PR on GitHub.
 Once a task is complete and the PR is merged:
 
 ```bash
-uv run pluribus delete "Add database migration system"
+pluribus delete "Add database migration system"
 ```
 
 This removes the worktree and branch, freeing up space for other work.
@@ -143,27 +190,27 @@ This entire workflow takes about 10 minutes:
 
 ```bash
 # 30 seconds: Initialize
-uv run pluribus init https://github.com/my-org/my-project.git
+pluribus init https://github.com/my-org/my-project.git
 
 # 30 seconds: Define 3 tasks in todo.md
 # (edit file manually)
 
 # 10 seconds: Start first task
-uv run pluribus workon
+pluribus workon
 # Choose task 1; Claude starts working
 
 # 10 seconds: Start second task (parallel, in another terminal)
-uv run pluribus workon
+pluribus workon
 # Choose task 2; another Claude instance starts
 
 # Monitor live (in another terminal)
-uv run pluribus watch
+pluribus watch
 
 # When first task is done (PR created):
-uv run pluribus delete "Add database migration system"
+pluribus delete "Add database migration system"
 
 # When other tasks are done, clean them up too
-uv run pluribus delete "Add JWT authentication to API"
+pluribus delete "Add JWT authentication to API"
 ```
 
 ## How It Works
