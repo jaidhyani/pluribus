@@ -164,7 +164,15 @@ class Worktree:
                 capture_output=True,
                 text=True,
             )
-            return [line.strip() for line in result.stdout.split('\n') if line.strip()]
+            branches = []
+            for line in result.stdout.split('\n'):
+                line = line.strip()
+                if line:
+                    # git branch output prefixes current branch with * and checked-out
+                    # worktrees with +, so we need to remove these markers
+                    branch_name = line.lstrip('*+').strip()
+                    branches.append(branch_name)
+            return branches
         except subprocess.CalledProcessError:
             return []
 
