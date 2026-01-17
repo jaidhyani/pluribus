@@ -232,9 +232,9 @@ def test_workspace_detection(repos_and_workspace):
         os.chdir(original_cwd)
 
 
-def test_status_auto_processes_agent_output(repos_and_workspace):
-    """Test that pluribus status automatically processes pending agent outputs."""
-    from pluribus.cli import init, status
+def test_processor_command_extracts_session_id(repos_and_workspace):
+    """Test that the _process_output command extracts and saves session_id."""
+    from pluribus.cli import init, _process_output
     from pluribus.config import Config
     from pluribus.worktree import Worktree
     from pluribus.status_file import StatusFile
@@ -277,16 +277,19 @@ def test_status_auto_processes_agent_output(repos_and_workspace):
     }
 
     output_file = pluribus_dir / "agent-output.json"
-    output_file.write_text(json.dumps(agent_output))
+    output_json = json.dumps(agent_output)
 
-    # Run status command - it should auto-process the output
-    original_cwd = os.getcwd()
-    try:
-        os.chdir(workspace)
-        result = runner.invoke(status, [])
-        assert result.exit_code == 0
-    finally:
-        os.chdir(original_cwd)
+    # Invoke _process_output command with the JSON as stdin
+    result = runner.invoke(
+        _process_output,
+        [str(wt), str(output_file)],
+        input=output_json,
+    )
+    assert result.exit_code == 0
+
+    # Verify output file was written
+    assert output_file.exists()
+    assert output_file.read_text() == output_json
 
     # Verify status file was updated with extracted info
     updated_status = status_file.load()

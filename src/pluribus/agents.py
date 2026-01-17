@@ -210,20 +210,40 @@ def spawn_agent(
     pluribus_dir.mkdir(parents=True, exist_ok=True)
     output_file = pluribus_dir / "agent-output.json"
 
-    # Spawn process
+    # Spawn process with output piped to processor for real-time updates
     try:
-        with open(output_file, "w") as out_f:
-            process = subprocess.Popen(
-                cmd,
-                stdout=out_f,
-                stderr=subprocess.STDOUT,
-                cwd=worktree_dir,
-                env=env,
-                text=True,
-                start_new_session=True,  # Detach from parent process
-            )
+        # Spawn agent with stdout as pipe
+        agent_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            cwd=worktree_dir,
+            env=env,
+            text=True,
+            start_new_session=True,  # Detach from parent process
+        )
 
-        return process.pid
+        # Create processor command to handle output in real-time
+        processor_cmd = [
+            "pluribus",
+            "_process_output",
+            str(worktree_dir),
+            str(output_file),
+        ]
+
+        # Spawn processor with agent's stdout as stdin
+        processor = subprocess.Popen(
+            processor_cmd,
+            stdin=agent_process.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,  # Detach processor as well
+        )
+
+        # Close agent's stdout in parent to allow pipe to work properly
+        agent_process.stdout.close()
+
+        return agent_process.pid
     except FileNotFoundError as e:
         raise FileNotFoundError(
             f"Failed to start agent: command not found: {agent.command}"

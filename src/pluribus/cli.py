@@ -512,17 +512,6 @@ def resume(identifier: str):
         click.echo(f"\n✓ Ready to resume at: {worktree_path}")
 
 
-def _process_all_pending_outputs(worktrees_root: Path) -> None:
-    """Process pending agent outputs for all active plurbs."""
-    for task_dir in worktrees_root.iterdir():
-        if task_dir.is_dir() and (task_dir / ".git").exists():
-            try:
-                process_completed_agent_run(task_dir)
-            except Exception:
-                # Silently continue - output processing failures shouldn't block status display
-                pass
-
-
 @cli.command()
 def status():
     """Show status of all plurbs."""
@@ -535,9 +524,6 @@ def status():
     if not worktrees_root.exists():
         click.echo("No tasks yet")
         return
-
-    # Process any pending agent outputs
-    _process_all_pending_outputs(worktrees_root)
 
     # Collect all task data
     task_data = []
@@ -587,9 +573,6 @@ def watch(interval: int):
 
     try:
         while True:
-            # Process any pending agent outputs
-            _process_all_pending_outputs(worktrees_root)
-
             # Collect and display current status
             task_data = []
             for task_dir in sorted(worktrees_root.iterdir()):
@@ -862,6 +845,37 @@ def git_cleanup(force: bool):
             click.echo(f"⚠️  Failed to delete {branch}: {e}")
 
     click.echo(f"\n✓ Cleaned up {deleted_count}/{len(orphaned)} branches")
+
+
+@cli.command(hidden=True)
+@click.argument("worktree_path")
+@click.argument("output_file")
+def _process_output(worktree_path: str, output_file: str):
+    """Internal command: process agent output and update status file.
+
+    Reads JSON from stdin, writes to output_file, and updates status file.
+    Used internally by spawn_agent to process output in real-time.
+    """
+    import sys
+
+    # Read all stdin (the agent output)
+    content = sys.stdin.read()
+
+    if not content.strip():
+        return
+
+    # Write to output file
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(content)
+
+    # Process the agent output
+    worktree_path = Path(worktree_path)
+    try:
+        process_completed_agent_run(worktree_path)
+    except Exception:
+        # Silently continue - processing failures shouldn't block the flow
+        pass
 
 
 def main():
