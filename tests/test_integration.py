@@ -230,3 +230,67 @@ def test_workspace_detection(repos_and_workspace):
         assert found_root == workspace
     finally:
         os.chdir(original_cwd)
+
+
+def test_status_auto_processes_agent_output(repos_and_workspace):
+    """Test that pluribus status automatically processes pending agent outputs."""
+    from pluribus.cli import init, status
+    from pluribus.config import Config
+    from pluribus.worktree import Worktree
+    from pluribus.status_file import StatusFile
+    from click.testing import CliRunner
+    import json
+    import os
+
+    main_repo, workspace = repos_and_workspace
+
+    # Initialize workspace
+    runner = CliRunner()
+    result = runner.invoke(init, [str(main_repo), "--path", str(workspace)])
+    assert result.exit_code == 0
+
+    # Create a worktree manually
+    config = Config(workspace)
+    repo_path = config.get_repo_path()
+    worktree_mgr = Worktree(repo_path, workspace / "worktrees")
+
+    from pluribus.tasks import task_to_branch_name, task_to_slug
+
+    task_slug = task_to_slug("Test Task")
+    wt = worktree_mgr.create(task_to_branch_name("Test Task"), task_slug)
+
+    # Create status file
+    status_file = StatusFile(wt)
+    status_file.create(task_slug)
+
+    # Create agent output with session_id and progress
+    pluribus_dir = wt / ".pluribus"
+    pluribus_dir.mkdir(parents=True, exist_ok=True)
+
+    agent_output = {
+        "type": "result",
+        "subtype": "success",
+        "is_error": False,
+        "result": "I've completed 75% of the implementation. Currently in the testing phase.",
+        "session_id": "test-session-123",
+        "duration_ms": 5000,
+    }
+
+    output_file = pluribus_dir / "agent-output.json"
+    output_file.write_text(json.dumps(agent_output))
+
+    # Run status command - it should auto-process the output
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(workspace)
+        result = runner.invoke(status, [])
+        assert result.exit_code == 0
+    finally:
+        os.chdir(original_cwd)
+
+    # Verify status file was updated with extracted info
+    updated_status = status_file.load()
+    assert updated_status["session_id"] == "test-session-123"
+    assert updated_status["progress_percent"] == 75
+    assert "testing" in updated_status["phase"].lower() or updated_status["phase"] == "testing"
+    assert "75%" in updated_status["work_summary"]

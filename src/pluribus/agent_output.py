@@ -174,7 +174,7 @@ def extract_progress_signals(result_text: Optional[str]) -> dict:
     # Look for phase indicators (more specific patterns, checked in priority order)
     phase_patterns = [
         ("complete", r"\bcomplete\b|\bdone\b|\bfinish\b"),
-        ("testing", r"\btest\b|\bdebug\b|\bverif"),
+        ("testing", r"\btest|\bdebug\b|\bverif"),
         ("implementation", r"\bimplement\b|\bbuilding\b|\bcoding\b|\bwriting\b"),
         ("planning", r"\bplanning\b|\bdesign\b|\barchitecture\b|\bspec\b"),
     ]

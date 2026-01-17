@@ -512,6 +512,17 @@ def resume(identifier: str):
         click.echo(f"\n✓ Ready to resume at: {worktree_path}")
 
 
+def _process_all_pending_outputs(worktrees_root: Path) -> None:
+    """Process pending agent outputs for all active plurbs."""
+    for task_dir in worktrees_root.iterdir():
+        if task_dir.is_dir() and (task_dir / ".git").exists():
+            try:
+                process_completed_agent_run(task_dir)
+            except Exception:
+                # Silently continue - output processing failures shouldn't block status display
+                pass
+
+
 @cli.command()
 def status():
     """Show status of all plurbs."""
@@ -524,6 +535,9 @@ def status():
     if not worktrees_root.exists():
         click.echo("No tasks yet")
         return
+
+    # Process any pending agent outputs
+    _process_all_pending_outputs(worktrees_root)
 
     # Collect all task data
     task_data = []
@@ -573,6 +587,9 @@ def watch(interval: int):
 
     try:
         while True:
+            # Process any pending agent outputs
+            _process_all_pending_outputs(worktrees_root)
+
             # Collect and display current status
             task_data = []
             for task_dir in sorted(worktrees_root.iterdir()):
