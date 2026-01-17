@@ -196,6 +196,24 @@ class Worktree:
 
         return orphaned
 
+    def prune_worktrees(self) -> None:
+        """Remove stale worktree entries from Git's internal tracking.
+
+        This cleans up Git's .git/worktrees/ directory when worktree directories
+        have been deleted manually or through other means, allowing branches to
+        be deleted even if Git thinks they're still in use.
+        """
+        try:
+            subprocess.run(
+                ["git", "worktree", "prune"],
+                cwd=self.repo_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise WorktreeError(f"Failed to prune worktrees: {e.stderr}")
+
     def delete_branch(self, branch_name: str) -> None:
         """Delete a branch (with -D to force even if not merged)."""
         try:

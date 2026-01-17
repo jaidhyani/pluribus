@@ -718,6 +718,13 @@ def git_cleanup(force: bool):
         sys.exit(1)
 
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
+
+    # Prune stale worktree entries to avoid conflicts when deleting branches
+    try:
+        worktree_manager.prune_worktrees()
+    except WorktreeError as e:
+        click.echo(f"⚠️  Warning: {e}")
+
     orphaned = worktree_manager.get_orphaned_branches()
 
     if not orphaned:
