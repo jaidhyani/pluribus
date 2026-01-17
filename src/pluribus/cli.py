@@ -7,9 +7,16 @@ from typing import Optional
 
 import click
 
+from .agents import (
+    load_agents_from_config,
+    resolve_agent,
+    spawn_agent,
+    try_get_session_id,
+    get_agent_metadata,
+)
 from .config import Config
 from .status_file import StatusFile
-from .tasks import TaskParser, task_to_branch_name, task_to_slug
+from .tasks import TaskParser, task_to_branch_name, task_to_slug, generate_unique_suffix
 from .worktree import Worktree, WorktreeError
 from .prompt import generate_task_prompt
 from .display import format_status_table, get_task_status_data, print_task_details
@@ -137,15 +144,27 @@ def init(repo_input: Optional[str], path: str):
 
 @cli.command()
 @click.argument("task_name", required=False)
-def workon(task_name: Optional[str]):
+@click.option(
+    "--agent",
+    default=None,
+    help="Agent to use for this task (overrides config)",
+)
+@click.option(
+    "--agent-arg",
+    multiple=True,
+    type=str,
+    help="Agent-specific arguments (format: key=value)",
+)
+def workon(task_name: Optional[str], agent: Optional[str], agent_arg: tuple):
     """Start working on a task."""
     workspace_root = find_workspace_root()
     if not workspace_root:
         click.echo("❌ Not in a Pluribus workspace (no pluribus.config found)")
         sys.exit(1)
 
-    config = Config(workspace_root)
-    repo_path = config.get_repo_path()
+    config_obj = Config(workspace_root)
+    config_dict = config_obj.load()
+    repo_path = config_obj.get_repo_path()
     if not repo_path or not repo_path.exists():
         click.echo("❌ Repository not configured or does not exist")
         sys.exit(1)
@@ -187,17 +206,22 @@ def workon(task_name: Optional[str]):
             click.echo("❌ Invalid input")
             sys.exit(1)
 
-    # Check if task already being worked on
-    task_slug = task_to_slug(task_name)
+    # Generate unique suffix for this task instance
+    unique_suffix = generate_unique_suffix()
+
+    # Create task slug and check if already exists
+    task_slug = task_to_slug(task_name, unique_suffix)
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
 
+    # Note: with unique suffixes, we won't have collisions, but keep the check
+    # in case the same random suffix is generated (extremely unlikely)
     if worktree_manager.exists(task_slug):
-        click.echo(f"❌ Task '{task_name}' is already being worked on")
-        click.echo(f"   Use: pluribus resume '{task_name}'")
-        sys.exit(1)
+        click.echo(f"⚠️  Rare collision detected (same random suffix). Retrying...")
+        unique_suffix = generate_unique_suffix()
+        task_slug = task_to_slug(task_name, unique_suffix)
 
     # Create worktree
-    branch_name = task_to_branch_name(task_name)
+    branch_name = task_to_branch_name(task_name, unique_suffix)
     try:
         worktree_path = worktree_manager.create(branch_name, task_slug)
         click.echo(f"✓ Created worktree at {worktree_path}")
@@ -210,27 +234,66 @@ def workon(task_name: Optional[str]):
     status_file.create(task_slug)
     click.echo(f"✓ Initialized status file")
 
-    # Generate and display prompt
-    prompt = generate_task_prompt(task_name, task_desc, worktree_path)
+    # Parse agent arguments
+    agent_args_dict = {}
+    for arg in agent_arg:
+        if "=" not in arg:
+            click.echo(f"❌ Invalid agent argument format: '{arg}' (expected key=value)")
+            sys.exit(1)
+        key, value = arg.split("=", 1)
+        agent_args_dict[key] = value
 
-    # Start Claude Code
-    click.echo(f"\n🚀 Starting Claude Code for: {task_name}\n")
+    # Resolve agent
+    config_agents = load_agents_from_config(config_dict)
+    default_agent = config_dict.get("default_agent")
+
     try:
-        subprocess.run(
-            ["claude-code", str(worktree_path)],
-            cwd=worktree_path,
+        agent_config = resolve_agent(agent, config_agents, default_agent)
+        if not agent_config:
+            click.echo("❌ No agent configured or available")
+            sys.exit(1)
+    except ValueError as e:
+        click.echo(f"❌ {e}")
+        sys.exit(1)
+
+    # Spawn agent
+    try:
+        agent_pid = spawn_agent(
+            agent_config,
+            task_id=task_slug,
+            task_name=task_name,
+            task_description=task_desc,
+            worktree_dir=worktree_path,
+            repo_root=repo_path,
+            agent_args=agent_args_dict if agent_args_dict else None,
         )
-        click.echo(f"\n✓ Work session ended for '{task_name}'")
-    except FileNotFoundError:
-        click.echo("⚠️  Claude Code CLI not found. Starting with prompt instead...\n")
-        click.echo("📋 Here's your task prompt:\n")
-        click.echo(prompt)
-        click.echo("\n" + "="*60)
-        click.echo("To work on this task with Claude Code, run:")
-        click.echo(f"  cd {worktree_path}")
-        click.echo("  claude-code")
-        click.echo("="*60)
-        click.echo(f"\n✓ Worktree ready at: {worktree_path}")
+        click.echo(f"✓ Spawned {agent_config.name} (PID: {agent_pid})")
+
+        # Update status file with agent info
+        agent_metadata = get_agent_metadata(agent_config)
+        status_file.update({
+            "agent_pid": agent_pid,
+            "agent": agent_metadata,
+            "status": "in_progress",
+            "claude_instance_active": True,
+        })
+
+        # Try to capture session ID for resumption (non-blocking)
+        session_id = try_get_session_id(worktree_path, timeout_seconds=3.0)
+        if session_id:
+            status_file.update({"session_id": session_id})
+            click.echo(f"✓ Captured session ID for resumption")
+
+        click.echo(f"\n✅ Task worktree ready with agent running")
+        click.echo(f"   Task: {task_name}")
+        click.echo(f"   Worktree: {worktree_path}")
+        click.echo(f"   Agent: {agent_config.name}")
+        click.echo(f"\n   To monitor progress: pluribus watch")
+        click.echo(f"   To resume manually: pluribus resume '{task_name}'")
+
+    except (FileNotFoundError, RuntimeError) as e:
+        click.echo(f"❌ {e}")
+        sys.exit(1)
 
 
 @cli.command()
@@ -257,22 +320,45 @@ def resume(task_name: str):
         click.echo(f"❌ {e}")
         sys.exit(1)
 
-    task_slug = task_to_slug(task_name)
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
 
-    if not worktree_manager.exists(task_slug):
+    # Find worktree by task name (search for matching prefix since we don't know the suffix)
+    task_base_slug = task_to_slug(task_name, "")  # Use empty suffix to get base name
+    worktrees_dir = workspace_root / "worktrees"
+    matching_slugs = [d.name for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith(task_base_slug)]
+
+    if not matching_slugs:
         click.echo(f"❌ No worktree found for '{task_name}'")
         sys.exit(1)
 
+    if len(matching_slugs) > 1:
+        click.echo(f"❌ Multiple worktrees found for '{task_name}': {matching_slugs}")
+        click.echo("   Please resume by full worktree name")
+        sys.exit(1)
+
+    task_slug = matching_slugs[0]
     worktree_path = worktree_manager.get_path(task_slug)
     prompt = generate_task_prompt(task_name, task_desc, worktree_path)
 
+    # Check if we have a session ID to resume
+    status_file = StatusFile(worktree_path)
+    status = status_file.load()
+    session_id = status.get("session_id") if status else None
+
     click.echo(f"🚀 Resuming work on: {task_name}\n")
     try:
-        subprocess.run(
-            ["claude-code", str(worktree_path)],
-            cwd=worktree_path,
-        )
+        if session_id:
+            # Resume specific session
+            subprocess.run(
+                ["claude-code", "--resume", session_id],
+                cwd=worktree_path,
+            )
+        else:
+            # Open worktree in new session
+            subprocess.run(
+                ["claude-code", str(worktree_path)],
+                cwd=worktree_path,
+            )
         click.echo(f"\n✓ Work session ended for '{task_name}'")
     except FileNotFoundError:
         click.echo("⚠️  Claude Code CLI not found. Starting with prompt instead...\n")
@@ -389,15 +475,25 @@ def details(task_name: str):
         click.echo(f"❌ {e}")
         sys.exit(1)
 
-    task_slug = task_to_slug(full_task_name)
     config = Config(workspace_root)
     repo_path = config.get_repo_path()
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
 
-    if not worktree_manager.exists(task_slug):
+    # Find worktree by task name (search for matching prefix since we don't know the suffix)
+    task_base_slug = task_to_slug(full_task_name, "")  # Use empty suffix to get base name
+    worktrees_dir = workspace_root / "worktrees"
+    matching_slugs = [d.name for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith(task_base_slug)]
+
+    if not matching_slugs:
         click.echo(f"❌ No worktree found for '{full_task_name}'")
         sys.exit(1)
 
+    if len(matching_slugs) > 1:
+        click.echo(f"❌ Multiple worktrees found for '{full_task_name}': {matching_slugs}")
+        click.echo("   Please delete by full worktree name")
+        sys.exit(1)
+
+    task_slug = matching_slugs[0]
     worktree_path = worktree_manager.get_path(task_slug)
     print_task_details(task_slug, worktree_path, worktree_manager)
 
@@ -421,14 +517,25 @@ def delete(task_name: str, force: bool):
         click.echo(f"❌ {e}")
         sys.exit(1)
 
-    task_slug = task_to_slug(full_task_name)
     config = Config(workspace_root)
     repo_path = config.get_repo_path()
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
 
-    if not worktree_manager.exists(task_slug):
+    # Find worktree by task name (search for matching prefix since we don't know the suffix)
+    task_base_slug = task_to_slug(full_task_name, "")  # Use empty suffix to get base name
+    worktrees_dir = workspace_root / "worktrees"
+    matching_slugs = [d.name for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith(task_base_slug)]
+
+    if not matching_slugs:
         click.echo(f"❌ No worktree found for '{full_task_name}'")
         sys.exit(1)
+
+    if len(matching_slugs) > 1:
+        click.echo(f"❌ Multiple worktrees found for '{full_task_name}': {matching_slugs}")
+        click.echo("   Please delete by full worktree name")
+        sys.exit(1)
+
+    task_slug = matching_slugs[0]
 
     # Check for uncommitted changes
     if worktree_manager.has_uncommitted_changes(task_slug):

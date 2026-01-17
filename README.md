@@ -137,6 +137,8 @@ This removes the worktree and branch, freeing up space for other work.
 
 - **`pluribus init <repo-url>`** – Initialize a new Pluribus workspace
 - **`pluribus workon [task-name]`** – Start working on a task (interactive selection if no name given)
+  - `--agent=<name>` – Specify agent to use (overrides config)
+  - `--agent-arg key=value` – Pass arguments to agent (repeatable)
 - **`pluribus resume <task-name>`** – Resume work on an existing task
 - **`pluribus status`** – Display current status of all tasks
 - **`pluribus watch [--interval 10]`** – Live-update status table
@@ -206,6 +208,68 @@ Each task gets its own Git worktree, completely isolated from others. This means
 ### Live Watching
 
 `pluribus watch` uses filesystem watchers (inotify on Linux, FSEvents on macOS) to detect when `.pluribus/status` files change. When a Claude instance updates a status file, the watch display updates immediately—no polling.
+
+## Configuration
+
+Pluribus uses a `pluribus.config` file (YAML format) to configure agents and workspace settings.
+
+### Agent Configuration
+
+By default, Pluribus spawns a headless Claude Code instance to work on tasks. You can configure custom agents or change the default behavior:
+
+```yaml
+# pluribus.config
+
+# Repository configuration
+repo_path: /path/to/repo
+
+# Default agent to use (optional, defaults to headless-claude-code)
+default_agent: default
+
+# Agent definitions
+agents:
+  default:
+    name: headless-claude-code
+    command: claude
+    args:
+      - -p
+    setup: null
+
+  interactive:
+    name: interactive-claude
+    command: claude
+    args:
+      - -p
+      - --interactive
+    setup: |
+      uv sync
+
+  custom-agent:
+    name: my-custom-agent
+    command: /path/to/custom-agent.sh
+    args:
+      - --verbose
+    setup: |
+      npm install
+      npm run build
+```
+
+### Using Custom Agents
+
+Specify an agent when starting a task:
+
+```bash
+# Use a specific configured agent
+pluribus workon --agent=interactive "My Task"
+
+# Pass agent-specific arguments
+pluribus workon --agent=custom-agent --agent-arg timeout=300 --agent-arg mode=debug "My Task"
+
+# Use default agent
+pluribus workon "My Task"
+```
+
+**Agent Precedence**: CLI arguments (`--agent`) override `pluribus.config`, which overrides the built-in default.
 
 ## Development
 
