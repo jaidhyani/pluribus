@@ -211,6 +211,13 @@ Each plurb has a `.pluribus/status` file (at `worktrees/<plurb-id>/.pluribus/sta
   "progress_percent": 45,
   "last_update": "2026-01-16T14:30:00Z",
   "claude_instance_active": true,
+  "agent_pid": 12345,
+  "agent": {
+    "name": "headless-claude-code",
+    "started_at": "2026-01-16T14:25:00Z",
+    "metadata": {}
+  },
+  "session_id": "sess_abc123xyz",
   "pr_url": null,
   "blocker": null,
   "notes": "Working on schema validation"

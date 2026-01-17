@@ -15,7 +15,7 @@ Pluribus is a Python CLI tool for managing multiple parallel Claude instances wo
 
 **Option 1: Development with uv sync** (local development, no global installation)
 ```bash
-cd /home/jai/Desktop/pluribus
+cd pluribus
 
 # Install dependencies
 uv sync
@@ -29,7 +29,7 @@ uv run pytest
 
 **Option 2: Development with editable install** (install globally, run `pluribus` from anywhere)
 ```bash
-cd /home/jai/Desktop/pluribus
+cd pluribus
 
 # Install in editable mode
 uv pip install -e .
@@ -98,14 +98,14 @@ pluribus init https://github.com/user/test-repo.git
 ## Architecture
 
 Key modules:
-- **`cli.py`** – Command routing and argument parsing
-- **`commands/`** – Individual command implementations
-- **`worktree.py`** – Git worktree operations
+- **`cli.py`** – Command routing, argument parsing, and all command implementations
+- **`agents.py`** – Agent configuration, spawning, and session ID capture
+- **`worktree.py`** – Git worktree operations (create, delete, branch management)
 - **`status_file.py`** – Status file reading/writing
-- **`tasks.py`** – Task parsing from `todo.md`
+- **`tasks.py`** – Task parsing from `todo.md` and slug generation
+- **`config.py`** – Configuration file (YAML) parsing
 - **`prompt.py`** – Claude prompt generation
-- **`display.py`** – CLI output formatting
-- **`watcher.py`** – File system watching for `pluribus watch`
+- **`display.py`** – CLI output formatting and status table rendering
 
 ## Key Design Decisions
 
@@ -165,7 +165,7 @@ git commit -m "Add worktree management module"
 
 Push to remote regularly:
 ```bash
-git push origin main
+git push origin <branch-name>
 ```
 
 ## Notes
