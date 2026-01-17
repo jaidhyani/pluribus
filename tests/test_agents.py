@@ -235,16 +235,9 @@ class TestSpawnAgent:
     @patch("pluribus.agents.subprocess.Popen")
     def test_spawn_agent_basic(self, mock_popen, tmp_path):
         """Test spawning an agent."""
-        # Create mock processes for both agent and processor
-        mock_agent = MagicMock()
-        mock_agent.pid = 12345
-        mock_agent.stdout = MagicMock()
-
-        mock_processor = MagicMock()
-        mock_processor.pid = 12346
-
-        # First call returns agent, second returns processor
-        mock_popen.side_effect = [mock_agent, mock_processor]
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
 
         agent = AgentConfig("test", "test-cmd")
         pid = spawn_agent(
@@ -257,28 +250,24 @@ class TestSpawnAgent:
         )
 
         assert pid == 12345
-        assert mock_popen.call_count == 2
+        mock_popen.assert_called_once()
+        call_args = mock_popen.call_args
 
-        # Verify first call (agent process)
-        agent_call = mock_popen.call_args_list[0]
-        assert agent_call[0][0] == ["test-cmd"]
-        assert agent_call[1]["stdout"] == subprocess.PIPE
+        # Verify command (non-headless agent keeps default behavior)
+        assert call_args[0][0] == ["test-cmd"]
 
-        # Verify second call (processor process)
-        processor_call = mock_popen.call_args_list[1]
-        assert processor_call[0][0] == ["pluribus", "process-output", str(tmp_path), str(tmp_path / ".pluribus" / "agent-output.json")]
-        assert processor_call[1]["stdin"] == mock_agent.stdout
+        # Verify env vars
+        env = call_args[1]["env"]
+        assert env["PLURIBUS_TASK_ID"] == "task-1"
+        assert env["PLURIBUS_TASK_NAME"] == "My Task"
 
     @patch("pluribus.agents.subprocess.run")
     @patch("pluribus.agents.subprocess.Popen")
     def test_spawn_agent_with_setup(self, mock_popen, mock_run, tmp_path):
         """Test spawning agent with setup script."""
-        mock_agent = MagicMock()
-        mock_agent.pid = 12345
-        mock_agent.stdout = MagicMock()
-
-        mock_processor = MagicMock()
-        mock_popen.side_effect = [mock_agent, mock_processor]
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
 
         agent = AgentConfig("test", "test-cmd", setup="npm install")
         pid = spawn_agent(
@@ -333,12 +322,9 @@ class TestSpawnAgent:
     @patch("pluribus.agents.subprocess.Popen")
     def test_spawn_agent_with_args(self, mock_popen, tmp_path):
         """Test spawning agent with command arguments."""
-        mock_agent = MagicMock()
-        mock_agent.pid = 12345
-        mock_agent.stdout = MagicMock()
-
-        mock_processor = MagicMock()
-        mock_popen.side_effect = [mock_agent, mock_processor]
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
 
         agent = AgentConfig("test", "test-cmd", args=["--arg1", "--arg2"])
         spawn_agent(
@@ -350,19 +336,15 @@ class TestSpawnAgent:
             repo_root=tmp_path / "repo",
         )
 
-        # Check first call (agent process)
-        agent_call = mock_popen.call_args_list[0]
-        assert agent_call[0][0] == ["test-cmd", "--arg1", "--arg2"]
+        call_args = mock_popen.call_args
+        assert call_args[0][0] == ["test-cmd", "--arg1", "--arg2"]
 
     @patch("pluribus.agents.subprocess.Popen")
     def test_spawn_headless_claude_adds_json_format(self, mock_popen, tmp_path):
         """Test that headless-claude-code gets --output-format json added."""
-        mock_agent = MagicMock()
-        mock_agent.pid = 12345
-        mock_agent.stdout = MagicMock()
-
-        mock_processor = MagicMock()
-        mock_popen.side_effect = [mock_agent, mock_processor]
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
 
         agent = AgentConfig("headless-claude-code", "claude", args=["-p"])
         spawn_agent(
@@ -374,9 +356,8 @@ class TestSpawnAgent:
             repo_root=tmp_path / "repo",
         )
 
-        # Check first call (agent process)
-        agent_call = mock_popen.call_args_list[0]
-        cmd = agent_call[0][0]
+        call_args = mock_popen.call_args
+        cmd = call_args[0][0]
         # Should have --output-format json added
         assert "--output-format" in cmd
         assert "json" in cmd
@@ -386,12 +367,9 @@ class TestSpawnAgent:
     @patch("pluribus.agents.subprocess.Popen")
     def test_spawn_headless_claude_respects_explicit_format(self, mock_popen, tmp_path):
         """Test that explicit --output-format is not overridden."""
-        mock_agent = MagicMock()
-        mock_agent.pid = 12345
-        mock_agent.stdout = MagicMock()
-
-        mock_processor = MagicMock()
-        mock_popen.side_effect = [mock_agent, mock_processor]
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_popen.return_value = mock_process
 
         agent = AgentConfig(
             "headless-claude-code",
@@ -407,9 +385,8 @@ class TestSpawnAgent:
             repo_root=tmp_path / "repo",
         )
 
-        # Check first call (agent process)
-        agent_call = mock_popen.call_args_list[0]
-        cmd = agent_call[0][0]
+        call_args = mock_popen.call_args
+        cmd = call_args[0][0]
         # Should have original format, not duplicate json, with task description appended
         assert cmd == ["claude", "-p", "--output-format", "text", "desc"]
 

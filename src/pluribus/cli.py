@@ -847,37 +847,6 @@ def git_cleanup(force: bool):
     click.echo(f"\n✓ Cleaned up {deleted_count}/{len(orphaned)} branches")
 
 
-@cli.command("process-output", hidden=True)
-@click.argument("worktree_path")
-@click.argument("output_file")
-def process_output(worktree_path: str, output_file: str):
-    """Internal command: process agent output and update status file.
-
-    Reads JSON from stdin, writes to output_file, and updates status file.
-    Used internally by spawn_agent to process output in real-time.
-    """
-    import sys
-
-    # Read all stdin (the agent output)
-    content = sys.stdin.read()
-
-    if not content.strip():
-        return
-
-    # Write to output file
-    output_path = Path(output_file)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(content)
-
-    # Process the agent output
-    worktree_path = Path(worktree_path)
-    try:
-        process_completed_agent_run(worktree_path)
-    except Exception:
-        # Silently continue - processing failures shouldn't block the flow
-        pass
-
-
 def main():
     """Entry point for the CLI."""
     try:
