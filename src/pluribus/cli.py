@@ -20,6 +20,7 @@ from .tasks import TaskParser, task_to_branch_name, task_to_slug, generate_uniqu
 from .worktree import Worktree, WorktreeError
 from .prompt import generate_task_prompt
 from .display import format_status_table, get_task_status_data, print_task_details
+from .post_run import process_completed_agent_run
 
 
 def find_workspace_root(start_path: Path = None) -> Optional[Path]:
@@ -297,6 +298,84 @@ def workon(task_name: Optional[str], agent: Optional[str], agent_arg: tuple):
 
 
 @cli.command()
+@click.argument("identifier", required=False)
+def check(identifier: Optional[str]):
+    """Check and process agent output for a plurb.
+
+    Processes completed agent runs, detects interventions, and updates status.
+    If no identifier given, checks all active plurbs.
+    """
+    workspace_root = find_workspace_root()
+    if not workspace_root:
+        click.echo("❌ Not in a Pluribus workspace")
+        sys.exit(1)
+
+    worktrees_dir = workspace_root / "worktrees"
+    if not worktrees_dir.exists():
+        click.echo("No worktrees to check")
+        return
+
+    # Determine which plurbs to check
+    plurb_ids = []
+    if identifier:
+        # Check specific plurb
+        if (worktrees_dir / identifier).is_dir():
+            plurb_ids = [identifier]
+        else:
+            # Try to find by task name
+            todo_path = workspace_root / "todo.md"
+            parser = TaskParser(todo_path)
+            try:
+                full_task_name, _ = parser.get_task_by_name(identifier)
+            except ValueError as e:
+                click.echo(f"❌ {e}")
+                sys.exit(1)
+
+            task_base_slug = task_to_slug(full_task_name, "")
+            plurb_ids = sorted(
+                [d.name for d in worktrees_dir.iterdir()
+                 if d.is_dir() and d.name.startswith(task_base_slug)]
+            )
+
+            if not plurb_ids:
+                click.echo(f"❌ No plurbs found for task '{full_task_name}'")
+                sys.exit(1)
+    else:
+        # Check all plurbs with active agents
+        plurb_ids = sorted(
+            [d.name for d in worktrees_dir.iterdir()
+             if d.is_dir() and (d / ".git").exists()]
+        )
+
+    # Process each plurb
+    for plurb_id in plurb_ids:
+        worktree_path = worktrees_dir / plurb_id
+        status_file = StatusFile(worktree_path)
+        status = status_file.load() or {}
+
+        # Skip if agent not active
+        if not status.get("claude_instance_active"):
+            continue
+
+        try:
+            process_completed_agent_run(worktree_path)
+            status_file = StatusFile(worktree_path)
+            updated_status = status_file.load() or {}
+
+            # Display results
+            click.echo(f"✓ Processed {plurb_id}")
+            if updated_status.get("interventions"):
+                click.echo(f"  ⚠️  {len(updated_status['interventions'])} intervention(s) detected")
+            if updated_status.get("blockers"):
+                click.echo(f"  ❌ Blocked: {updated_status['blockers'].get('message')}")
+            if updated_status.get("progress_percent"):
+                click.echo(f"  📊 Progress: {updated_status['progress_percent']}%")
+
+        except Exception as e:
+            click.echo(f"⚠️  Error processing {plurb_id}: {e}")
+
+
+@cli.command()
 @click.argument("identifier")
 def resume(identifier: str):
     """Resume work on an existing plurb.
@@ -390,8 +469,23 @@ def resume(identifier: str):
     status_file = StatusFile(worktree_path)
     status = status_file.load()
     session_id = status.get("session_id") if status else None
+    interventions = status.get("interventions", []) if status else []
 
     click.echo(f"🚀 Resuming work on: {task_name}\n")
+
+    # Display pending interventions if any
+    if interventions:
+        click.echo("⚠️  Pending interventions:\n")
+        for i, intervention in enumerate(interventions, 1):
+            if intervention.get("type") == "ask_user_question":
+                click.echo(f"  [{i}] Question: {intervention.get('question', 'No text')}")
+                if intervention.get("options"):
+                    for opt in intervention["options"]:
+                        click.echo(f"       - {opt.get('label')}: {opt.get('description')}")
+            else:
+                click.echo(f"  [{i}] Permission: {intervention.get('description', 'No text')}")
+        click.echo()
+
     try:
         if session_id:
             # Resume specific session

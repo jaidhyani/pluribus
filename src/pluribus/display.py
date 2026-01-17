@@ -38,6 +38,15 @@ def format_status_table(task_data: List[dict]) -> str:
         last_update_display = format_time_ago(task.get("last_update"))
         active_display = "Y" if task.get("claude_instance_active") else "N"
 
+        # Indicator for issues
+        issues = ""
+        if task.get("interventions"):
+            issues += f"⚠️  {len(task['interventions'])} intervention(s)"
+        if task.get("blockers"):
+            if issues:
+                issues += " | "
+            issues += "❌ blocked"
+
         rows.append([
             task.get("task_name", "-"),
             task.get("branch", "-"),
@@ -46,9 +55,10 @@ def format_status_table(task_data: List[dict]) -> str:
             last_update_display,
             active_display,
             task.get("pr_url", "-") or "-",
+            issues or "-",
         ])
 
-    headers = ["Task", "Branch", "Status", "Progress", "Last Update", "Claude", "PR URL"]
+    headers = ["Task", "Branch", "Status", "Progress", "Last Update", "Claude", "PR URL", "Alerts"]
     return tabulate(rows, headers=headers, tablefmt="grid")
 
 

@@ -22,13 +22,15 @@ class StatusFile:
             "status": "pending",
             "phase": "starting",
             "progress_percent": 0,
+            "work_summary": "",
             "last_update": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "claude_instance_active": False,
             "agent_pid": None,
             "agent": None,
             "session_id": None,
             "pr_url": None,
-            "blocker": None,
+            "blockers": None,
+            "interventions": [],
             "notes": "",
         }
 
