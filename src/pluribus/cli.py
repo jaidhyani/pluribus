@@ -71,7 +71,7 @@ def _parse_repo_input(repo_input: str) -> str:
 
 @click.group()
 def cli():
-    """Pluribus: Manage multiple parallel Claude Code instances."""
+    """Pluribus: Manage multiple parallel Claude instances."""
     pass
 
 
@@ -156,7 +156,7 @@ def init(repo_input: Optional[str], path: str):
     help="Agent-specific arguments (format: key=value)",
 )
 def workon(task_name: Optional[str], agent: Optional[str], agent_arg: tuple):
-    """Start working on a task."""
+    """Start working on a task (creates a new plurb with unique identifier)."""
     workspace_root = find_workspace_root()
     if not workspace_root:
         click.echo("❌ Not in a Pluribus workspace (no pluribus.config found)")
@@ -297,9 +297,16 @@ def workon(task_name: Optional[str], agent: Optional[str], agent_arg: tuple):
 
 
 @cli.command()
-@click.argument("task_name")
-def resume(task_name: str):
-    """Resume work on an existing task."""
+@click.argument("identifier")
+def resume(identifier: str):
+    """Resume work on an existing plurb.
+
+    IDENTIFIER can be:
+    - A task name from todo.md (e.g., "Add database migration")
+    - A plurb-id (directory name with suffix, e.g., "add-database-migration-abc12")
+
+    If multiple plurbs exist for a task name, you'll be prompted to choose which one.
+    """
     workspace_root = find_workspace_root()
     if not workspace_root:
         click.echo("❌ Not in a Pluribus workspace")
@@ -311,33 +318,72 @@ def resume(task_name: str):
         click.echo("❌ Repository not configured")
         sys.exit(1)
 
-    todo_path = workspace_root / "todo.md"
-    parser = TaskParser(todo_path)
-
-    try:
-        task_name, task_desc = parser.get_task_by_name(task_name)
-    except ValueError as e:
-        click.echo(f"❌ {e}")
-        sys.exit(1)
-
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
-
-    # Find worktree by task name (search for matching prefix since we don't know the suffix)
-    task_base_slug = task_to_slug(task_name, "")  # Use empty suffix to get base name
     worktrees_dir = workspace_root / "worktrees"
-    matching_slugs = [d.name for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith(task_base_slug)]
 
-    if not matching_slugs:
-        click.echo(f"❌ No worktree found for '{task_name}'")
-        sys.exit(1)
+    # First, check if identifier is an exact plurb-id (directory exists)
+    plurb_id = None
+    task_name = None
+    task_desc = None
 
-    if len(matching_slugs) > 1:
-        click.echo(f"❌ Multiple worktrees found for '{task_name}': {matching_slugs}")
-        click.echo("   Please resume by full worktree name")
-        sys.exit(1)
+    if (worktrees_dir / identifier).is_dir():
+        plurb_id = identifier
+        # For display purposes, try to find the task name from status file
+        status_file = StatusFile(worktrees_dir / plurb_id)
+        status = status_file.load()
+        task_name = status.get("task_id", plurb_id) if status else plurb_id
+    else:
+        # Try to resolve it as a task name from todo.md
+        todo_path = workspace_root / "todo.md"
+        parser = TaskParser(todo_path)
 
-    task_slug = matching_slugs[0]
-    worktree_path = worktree_manager.get_path(task_slug)
+        try:
+            full_task_name, task_desc = parser.get_task_by_name(identifier)
+        except ValueError as e:
+            click.echo(f"❌ {e}")
+            sys.exit(1)
+
+        task_name = full_task_name
+
+        # Find all plurbs (instances) for this task
+        task_base_slug = task_to_slug(full_task_name, "")
+        matching_plurbs = sorted(
+            [d.name for d in worktrees_dir.iterdir()
+             if d.is_dir() and d.name.startswith(task_base_slug)]
+        )
+
+        if not matching_plurbs:
+            click.echo(f"❌ No plurbs found for task '{full_task_name}'")
+            sys.exit(1)
+
+        if len(matching_plurbs) == 1:
+            plurb_id = matching_plurbs[0]
+        else:
+            # Multiple plurbs - let user choose
+            click.echo(f"\n📋 Multiple instances found for '{full_task_name}':")
+            for i, p in enumerate(matching_plurbs, 1):
+                status_file = StatusFile(worktrees_dir / p)
+                status = status_file.load() or {}
+                progress = status.get("progress_percent", "-")
+                click.echo(f"  [{i}] {p} (progress: {progress}%)")
+
+            try:
+                choice = click.prompt("Choose which to resume (number)", type=int)
+                if 1 <= choice <= len(matching_plurbs):
+                    plurb_id = matching_plurbs[choice - 1]
+                else:
+                    click.echo("❌ Invalid choice")
+                    sys.exit(1)
+            except click.Abort:
+                click.echo("Cancelled")
+                return
+
+    worktree_path = worktree_manager.get_path(plurb_id)
+    if not task_desc:
+        # If we resolved by plurb_id, we may not have task_desc. Fetch from status if available.
+        status_file = StatusFile(worktree_path)
+        status = status_file.load()
+        task_desc = status.get("notes", "") if status else ""
     prompt = generate_task_prompt(task_name, task_desc, worktree_path)
 
     # Check if we have a session ID to resume
@@ -350,31 +396,31 @@ def resume(task_name: str):
         if session_id:
             # Resume specific session
             subprocess.run(
-                ["claude-code", "--resume", session_id],
+                ["claude", "--resume", session_id],
                 cwd=worktree_path,
             )
         else:
             # Open worktree in new session
             subprocess.run(
-                ["claude-code", str(worktree_path)],
+                ["claude", str(worktree_path)],
                 cwd=worktree_path,
             )
         click.echo(f"\n✓ Work session ended for '{task_name}'")
     except FileNotFoundError:
-        click.echo("⚠️  Claude Code CLI not found. Starting with prompt instead...\n")
+        click.echo("⚠️  Claude CLI not found. Starting with prompt instead...\n")
         click.echo("📋 Here's your task prompt:\n")
         click.echo(prompt)
         click.echo("\n" + "="*60)
-        click.echo("To work on this task with Claude Code, run:")
+        click.echo("To work on this task with Claude, run:")
         click.echo(f"  cd {worktree_path}")
-        click.echo("  claude-code")
+        click.echo("  claude")
         click.echo("="*60)
         click.echo(f"\n✓ Ready to resume at: {worktree_path}")
 
 
 @cli.command()
 def status():
-    """Show status of all tasks."""
+    """Show status of all plurbs."""
     workspace_root = find_workspace_root()
     if not workspace_root:
         click.echo("❌ Not in a Pluribus workspace")
@@ -403,7 +449,7 @@ def status():
 @cli.command()
 @click.option("--interval", default=5, help="Refresh interval in seconds")
 def watch(interval: int):
-    """Watch task status for live updates."""
+    """Watch plurb status for live updates."""
     import time
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
@@ -458,104 +504,170 @@ def watch(interval: int):
 
 
 @cli.command()
-@click.argument("task_name")
-def details(task_name: str):
-    """Show detailed information about a task."""
+@click.argument("identifier")
+def details(identifier: str):
+    """Show detailed information about a plurb.
+
+    IDENTIFIER can be:
+    - A task name from todo.md (e.g., "Add database migration")
+    - A plurb-id (directory name with suffix, e.g., "add-database-migration-abc12")
+
+    If multiple plurbs exist for a task name, you'll be prompted to choose which one.
+    """
     workspace_root = find_workspace_root()
     if not workspace_root:
         click.echo("❌ Not in a Pluribus workspace")
         sys.exit(1)
 
-    todo_path = workspace_root / "todo.md"
-    parser = TaskParser(todo_path)
-
-    try:
-        full_task_name, _ = parser.get_task_by_name(task_name)
-    except ValueError as e:
-        click.echo(f"❌ {e}")
-        sys.exit(1)
-
     config = Config(workspace_root)
     repo_path = config.get_repo_path()
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
-
-    # Find worktree by task name (search for matching prefix since we don't know the suffix)
-    task_base_slug = task_to_slug(full_task_name, "")  # Use empty suffix to get base name
     worktrees_dir = workspace_root / "worktrees"
-    matching_slugs = [d.name for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith(task_base_slug)]
 
-    if not matching_slugs:
-        click.echo(f"❌ No worktree found for '{full_task_name}'")
-        sys.exit(1)
+    # First, check if identifier is an exact plurb-id (directory exists)
+    plurb_id = None
+    if (worktrees_dir / identifier).is_dir():
+        plurb_id = identifier
+    else:
+        # Try to resolve it as a task name from todo.md
+        todo_path = workspace_root / "todo.md"
+        parser = TaskParser(todo_path)
 
-    if len(matching_slugs) > 1:
-        click.echo(f"❌ Multiple worktrees found for '{full_task_name}': {matching_slugs}")
-        click.echo("   Please delete by full worktree name")
-        sys.exit(1)
+        try:
+            full_task_name, _ = parser.get_task_by_name(identifier)
+        except ValueError as e:
+            click.echo(f"❌ {e}")
+            sys.exit(1)
 
-    task_slug = matching_slugs[0]
-    worktree_path = worktree_manager.get_path(task_slug)
-    print_task_details(task_slug, worktree_path, worktree_manager)
+        # Find all plurbs (instances) for this task
+        task_base_slug = task_to_slug(full_task_name, "")
+        matching_plurbs = sorted(
+            [d.name for d in worktrees_dir.iterdir()
+             if d.is_dir() and d.name.startswith(task_base_slug)]
+        )
+
+        if not matching_plurbs:
+            click.echo(f"❌ No plurbs found for task '{full_task_name}'")
+            sys.exit(1)
+
+        if len(matching_plurbs) == 1:
+            plurb_id = matching_plurbs[0]
+        else:
+            # Multiple plurbs - let user choose
+            click.echo(f"\n📋 Multiple instances found for '{full_task_name}':")
+            for i, p in enumerate(matching_plurbs, 1):
+                status_file = StatusFile(worktrees_dir / p)
+                status = status_file.load() or {}
+                progress = status.get("progress_percent", "-")
+                click.echo(f"  [{i}] {p} (progress: {progress}%)")
+
+            try:
+                choice = click.prompt("Choose which to view (number)", type=int)
+                if 1 <= choice <= len(matching_plurbs):
+                    plurb_id = matching_plurbs[choice - 1]
+                else:
+                    click.echo("❌ Invalid choice")
+                    sys.exit(1)
+            except click.Abort:
+                click.echo("Cancelled")
+                return
+
+    worktree_path = worktree_manager.get_path(plurb_id)
+    print_task_details(plurb_id, worktree_path, worktree_manager)
 
 
 @cli.command()
-@click.argument("task_name")
+@click.argument("identifier")
 @click.option("--force", is_flag=True, help="Force delete even with uncommitted changes")
-def delete(task_name: str, force: bool):
-    """Delete a completed task's worktree and branch."""
+def delete(identifier: str, force: bool):
+    """Delete a completed plurb's worktree (branch remains for cleanup).
+
+    IDENTIFIER can be:
+    - A task name from todo.md (e.g., "Add database migration")
+    - A plurb-id (directory name with suffix, e.g., "add-database-migration-abc12")
+
+    If multiple plurbs exist for a task name, you'll be prompted to choose which one.
+
+    Note: This removes only the worktree directory. The branch is left in place and can be
+    cleaned up later with 'pluribus git-cleanup'.
+    """
     workspace_root = find_workspace_root()
     if not workspace_root:
         click.echo("❌ Not in a Pluribus workspace")
         sys.exit(1)
 
-    todo_path = workspace_root / "todo.md"
-    parser = TaskParser(todo_path)
-
-    try:
-        full_task_name, _ = parser.get_task_by_name(task_name)
-    except ValueError as e:
-        click.echo(f"❌ {e}")
-        sys.exit(1)
-
     config = Config(workspace_root)
     repo_path = config.get_repo_path()
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
-
-    # Find worktree by task name (search for matching prefix since we don't know the suffix)
-    task_base_slug = task_to_slug(full_task_name, "")  # Use empty suffix to get base name
     worktrees_dir = workspace_root / "worktrees"
-    matching_slugs = [d.name for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith(task_base_slug)]
 
-    if not matching_slugs:
-        click.echo(f"❌ No worktree found for '{full_task_name}'")
-        sys.exit(1)
+    # First, check if identifier is an exact plurb-id (directory exists)
+    plurb_id = None
+    if (worktrees_dir / identifier).is_dir():
+        plurb_id = identifier
+    else:
+        # Try to resolve it as a task name from todo.md
+        todo_path = workspace_root / "todo.md"
+        parser = TaskParser(todo_path)
 
-    if len(matching_slugs) > 1:
-        click.echo(f"❌ Multiple worktrees found for '{full_task_name}': {matching_slugs}")
-        click.echo("   Please delete by full worktree name")
-        sys.exit(1)
+        try:
+            full_task_name, _ = parser.get_task_by_name(identifier)
+        except ValueError as e:
+            click.echo(f"❌ {e}")
+            sys.exit(1)
 
-    task_slug = matching_slugs[0]
+        # Find all plurbs (instances) for this task
+        task_base_slug = task_to_slug(full_task_name, "")
+        matching_plurbs = sorted(
+            [d.name for d in worktrees_dir.iterdir()
+             if d.is_dir() and d.name.startswith(task_base_slug)]
+        )
+
+        if not matching_plurbs:
+            click.echo(f"❌ No plurbs found for task '{full_task_name}'")
+            sys.exit(1)
+
+        if len(matching_plurbs) == 1:
+            plurb_id = matching_plurbs[0]
+        else:
+            # Multiple plurbs - let user choose
+            click.echo(f"\n📋 Multiple instances found for '{full_task_name}':")
+            for i, p in enumerate(matching_plurbs, 1):
+                status_file = StatusFile(worktrees_dir / p)
+                status = status_file.load() or {}
+                progress = status.get("progress_percent", "-")
+                click.echo(f"  [{i}] {p} (progress: {progress}%)")
+
+            try:
+                choice = click.prompt("Choose which to delete (number)", type=int)
+                if 1 <= choice <= len(matching_plurbs):
+                    plurb_id = matching_plurbs[choice - 1]
+                else:
+                    click.echo("❌ Invalid choice")
+                    sys.exit(1)
+            except click.Abort:
+                click.echo("Cancelled")
+                return
 
     # Check for uncommitted changes
-    if worktree_manager.has_uncommitted_changes(task_slug):
+    if worktree_manager.has_uncommitted_changes(plurb_id):
         if not force:
-            click.echo(f"⚠️  Task has uncommitted changes")
+            click.echo(f"⚠️  Plurb has uncommitted changes")
             if not click.confirm("Delete anyway?"):
                 click.echo("Cancelled")
                 return
 
-    if worktree_manager.has_unpushed_commits(task_slug):
+    if worktree_manager.has_unpushed_commits(plurb_id):
         if not force:
-            click.echo(f"⚠️  Task has unpushed commits")
+            click.echo(f"⚠️  Plurb has unpushed commits")
             if not click.confirm("Delete anyway?"):
                 click.echo("Cancelled")
                 return
 
     # Delete the worktree
     try:
-        worktree_manager.delete(task_slug)
-        click.echo(f"✓ Deleted worktree for '{full_task_name}'")
+        worktree_manager.delete(plurb_id)
+        click.echo(f"✓ Deleted plurb '{plurb_id}'")
     except WorktreeError as e:
         click.echo(f"❌ {e}")
         sys.exit(1)
@@ -588,6 +700,50 @@ def list_tasks():
             for line in desc.split('\n')[:2]:
                 if line.strip():
                     click.echo(f"      {line.strip()}")
+
+
+@cli.command("git-cleanup")
+@click.option("--force", is_flag=True, help="Delete orphaned branches without confirmation")
+def git_cleanup(force: bool):
+    """Delete orphaned pluribus branches (worktree was deleted but branch remains)."""
+    workspace_root = find_workspace_root()
+    if not workspace_root:
+        click.echo("❌ Not in a Pluribus workspace")
+        sys.exit(1)
+
+    config = Config(workspace_root)
+    repo_path = config.get_repo_path()
+    if not repo_path or not repo_path.exists():
+        click.echo("❌ Repository not configured")
+        sys.exit(1)
+
+    worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
+    orphaned = worktree_manager.get_orphaned_branches()
+
+    if not orphaned:
+        click.echo("✓ No orphaned branches found")
+        return
+
+    click.echo(f"\n🌿 Found {len(orphaned)} orphaned branch(es):\n")
+    for branch in orphaned:
+        click.echo(f"   {branch}")
+
+    if not force:
+        if not click.confirm("\nDelete these branches?"):
+            click.echo("Cancelled")
+            return
+
+    click.echo()
+    deleted_count = 0
+    for branch in orphaned:
+        try:
+            worktree_manager.delete_branch(branch)
+            click.echo(f"✓ Deleted {branch}")
+            deleted_count += 1
+        except WorktreeError as e:
+            click.echo(f"⚠️  Failed to delete {branch}: {e}")
+
+    click.echo(f"\n✓ Cleaned up {deleted_count}/{len(orphaned)} branches")
 
 
 def main():

@@ -2,7 +2,12 @@
 
 ## Project Overview
 
-Pluribus is a Python CLI tool for managing multiple parallel Claude Code instances working on different tasks within a single Git repository. It uses Git worktrees to isolate work on each task and manages their lifecycle from creation through PR submission and cleanup.
+Pluribus is a Python CLI tool for managing multiple parallel Claude instances working on different tasks within a single Git repository. It uses Git worktrees to isolate work on each task instance (called a "plurb") and manages their lifecycle from creation through PR submission and cleanup.
+
+**Terminology**:
+- **task**: An item from `todo.md` (e.g., "Add database migration")
+- **plurb-id**: A unique instance of a task with format `{task-slug}-{suffix}` (e.g., `add-database-migration-abc12`)
+- **plurb**: A complete instance consisting of a worktree, branch, and agent process
 
 ## Development Workflow
 
@@ -10,7 +15,7 @@ Pluribus is a Python CLI tool for managing multiple parallel Claude Code instanc
 
 **Option 1: Development with uv sync** (local development, no global installation)
 ```bash
-cd /home/jai/Desktop/pluribus
+cd pluribus
 
 # Install dependencies
 uv sync
@@ -24,7 +29,7 @@ uv run pytest
 
 **Option 2: Development with editable install** (install globally, run `pluribus` from anywhere)
 ```bash
-cd /home/jai/Desktop/pluribus
+cd pluribus
 
 # Install in editable mode
 uv pip install -e .
@@ -93,14 +98,14 @@ pluribus init https://github.com/user/test-repo.git
 ## Architecture
 
 Key modules:
-- **`cli.py`** – Command routing and argument parsing
-- **`commands/`** – Individual command implementations
-- **`worktree.py`** – Git worktree operations
+- **`cli.py`** – Command routing, argument parsing, and all command implementations
+- **`agents.py`** – Agent configuration, spawning, and session ID capture
+- **`worktree.py`** – Git worktree operations (create, delete, branch management)
 - **`status_file.py`** – Status file reading/writing
-- **`tasks.py`** – Task parsing from `todo.md`
+- **`tasks.py`** – Task parsing from `todo.md` and slug generation
+- **`config.py`** – Configuration file (YAML) parsing
 - **`prompt.py`** – Claude prompt generation
-- **`display.py`** – CLI output formatting
-- **`watcher.py`** – File system watching for `pluribus watch`
+- **`display.py`** – CLI output formatting and status table rendering
 
 ## Key Design Decisions
 
@@ -112,9 +117,9 @@ Key modules:
 
 ## Status File Format
 
-Location: `worktrees/<task-slug>/.pluribus/status`
+Location: `worktrees/<plurb-id>/.pluribus/status`
 
-JSON format with required fields:
+Each plurb has a status file tracking its state. JSON format with required fields:
 ```json
 {
   "task_id": "add-database-migration-system",
@@ -123,6 +128,13 @@ JSON format with required fields:
   "progress_percent": 45,
   "last_update": "2026-01-16T14:30:00Z",
   "claude_instance_active": true,
+  "agent_pid": 12345,
+  "agent": {
+    "name": "headless-claude-code",
+    "started_at": "2026-01-16T14:25:00Z",
+    "metadata": {}
+  },
+  "session_id": "sess_abc123xyz",
   "pr_url": null,
   "blocker": null,
   "notes": "Working on schema validation"
@@ -131,16 +143,17 @@ JSON format with required fields:
 
 Status enum: `pending`, `in_progress`, `blocked`, `ready_for_pr`, `pr_open`, `done`
 
-## Commands to Implement
+## Commands Reference
 
 - `pluribus init <repo-url>` – Initialize workspace
-- `pluribus workon [task-name]` – Start work on a task (interactive if no name given)
-- `pluribus resume <task-name>` – Resume work on existing task
-- `pluribus delete <task-name>` – Clean up completed task
-- `pluribus status` – Show table of all tasks
+- `pluribus workon [task-name]` – Start work on a task (creates a new plurb; interactive if no name given)
+- `pluribus resume <identifier>` – Resume work on a plurb (accepts task name or plurb-id; prompts if multiple plurbs exist)
+- `pluribus delete <identifier>` – Remove plurb's worktree (branch left for cleanup; accepts task name or plurb-id)
+- `pluribus git-cleanup [--force]` – Delete orphaned `pluribus/*` branches (branches with no corresponding worktree)
+- `pluribus status` – Show table of all plurbs
 - `pluribus watch [--interval 10]` – Live-update status table
 - `pluribus list-tasks` – List all tasks from `todo.md`
-- `pluribus details <task-name>` – Show full status + git info
+- `pluribus details <identifier>` – Show full status + git info for a plurb (accepts task name or plurb-id; prompts if multiple plurbs exist)
 
 ## Committing Changes
 
@@ -152,7 +165,7 @@ git commit -m "Add worktree management module"
 
 Push to remote regularly:
 ```bash
-git push origin main
+git push origin <branch-name>
 ```
 
 ## Notes

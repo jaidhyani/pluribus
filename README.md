@@ -1,6 +1,6 @@
 # Pluribus
 
-Pluribus is a CLI tool for managing multiple parallel Claude Code instances working on different tasks within a single Git repository. It uses Git worktrees to create isolated, independent work environments for each task and keeps them coordinated via a simple filesystem-based status system.
+Pluribus is a CLI tool for managing multiple parallel Claude instances working on different tasks within a single Git repository. It uses Git worktrees to create isolated, independent work environments (called "plurbs") for each task instance and keeps them coordinated via a simple filesystem-based status system.
 
 ## Why Pluribus?
 
@@ -11,10 +11,10 @@ Imagine you have a project with 3 issues to tackle. Instead of:
 
 You can:
 - Define tasks in a simple `todo.md` file
-- Spin up multiple Claude Code instances with `pluribus workon`
-- Each instance works independently in its own worktree
+- Spin up multiple Claude instances with `pluribus workon`
+- Each instance works independently in its own plurb (worktree + branch + agent)
 - Monitor all progress in real-time with `pluribus watch`
-- Clean up completed tasks with `pluribus delete`
+- Clean up completed plurbs with `pluribus delete`
 
 All coordinated through the filesystem as a single source of truth.
 
@@ -24,7 +24,7 @@ All coordinated through the filesystem as a single source of truth.
 - Python 3.9+
 - Git (with support for `git worktree`)
 - GitHub CLI (`gh`) configured with your credentials
-- Claude Code CLI installed
+- Claude CLI installed
 
 ### Option 1: Install from PyPI (Recommended)
 
@@ -91,11 +91,14 @@ Brief context about what needs to be done.
 pluribus workon
 ```
 
-Pluribus will show available tasks and prompt you to choose one. It then:
-- Creates a new branch (`pluribus/<task-name>`)
-- Creates an isolated Git worktree at `worktrees/<task-name>/`
+Pluribus will show available tasks and prompt you to choose one. It then creates a **plurb** (an isolated instance of that task):
+- Generates a unique identifier combining task name and random suffix (e.g., `add-database-migration-abc12`)
+- Creates a new branch (`pluribus/add-database-migration-abc12`)
+- Creates an isolated Git worktree at `worktrees/add-database-migration-abc12/`
 - Initializes a `.pluribus/status` file to track progress
-- Starts Claude Code in that directory with context about the task
+- Starts Claude in that directory with context about the task
+
+Multiple plurbs can work on the same task simultaneously with independent branches and worktrees.
 
 ### 4. Monitor progress
 
@@ -105,7 +108,7 @@ In another terminal:
 pluribus watch
 ```
 
-This displays a live-updating table of all tasks and their status:
+This displays a live-updating table of all plurbs and their status:
 
 ```
 Task                          | Branch                    | Status       | Progress | Last Update
@@ -116,7 +119,7 @@ Refactor logging...           | -                         | pending      | -    
 
 ### 5. Create a PR
 
-When Claude Code finishes work on a task, it will:
+When Claude finishes work on a plurb, it will:
 - Push commits to its branch
 - Create a PR via `gh pr create`
 - Update the status file with the PR URL
@@ -125,26 +128,45 @@ You can then review and merge the PR on GitHub.
 
 ### 6. Clean up
 
-Once a task is complete and the PR is merged:
+Once a plurb is complete and the PR is merged:
 
 ```bash
 pluribus delete "Add database migration system"
 ```
 
-This removes the worktree and branch, freeing up space for other work.
+This removes that plurb's worktree directory. If multiple plurbs exist for the task, you'll be prompted to choose which one to delete.
+
+**Note**: The Git branch is left in place. To clean up orphaned branches later:
+
+```bash
+pluribus git-cleanup
+```
+
+This finds all `pluribus/*` branches that have no corresponding worktree and prompts you to delete them. Use `--force` to skip the confirmation.
 
 ## Commands
 
+### Terminology
+- **task**: An item from `todo.md` (e.g., "Add database migration")
+- **plurb-id**: An isolated instance with unique identifier (e.g., `add-database-migration-abc12`)
+- **identifier**: Either a task name or plurb-id
+
+### Command Reference
+
 - **`pluribus init <repo-url>`** – Initialize a new Pluribus workspace
-- **`pluribus workon [task-name]`** – Start working on a task (interactive selection if no name given)
+- **`pluribus workon [task-name]`** – Start working on a task (creates a new plurb with unique ID; interactive selection if no name given)
   - `--agent=<name>` – Specify agent to use (overrides config)
   - `--agent-arg key=value` – Pass arguments to agent (repeatable)
-- **`pluribus resume <task-name>`** – Resume work on an existing task
-- **`pluribus status`** – Display current status of all tasks
+- **`pluribus resume <identifier>`** – Resume work on an existing plurb (accepts task name or plurb-id; prompts if multiple plurbs exist)
+- **`pluribus status`** – Display current status of all plurbs
 - **`pluribus watch [--interval 10]`** – Live-update status table
 - **`pluribus list-tasks`** – List all tasks from `todo.md`
-- **`pluribus details <task-name>`** – Show full status, recent commits, and uncommitted changes
-- **`pluribus delete <task-name>`** – Remove a completed task's worktree and branch
+- **`pluribus details <identifier>`** – Show full status, recent commits, and uncommitted changes (accepts task name or plurb-id; prompts if multiple plurbs exist)
+- **`pluribus delete <identifier>`** – Remove a plurb's worktree (accepts task name or plurb-id; prompts if multiple plurbs exist)
+  - `--force` – Skip confirmation prompts for uncommitted changes
+  - Note: Branch is left in place; use `git-cleanup` to remove it later
+- **`pluribus git-cleanup`** – Delete orphaned `pluribus/*` branches (branches with no corresponding worktree)
+  - `--force` – Delete without confirmation
 
 ## Workflow Example
 
@@ -179,7 +201,7 @@ pluribus delete "Add JWT authentication to API"
 
 ### The Status File
 
-Each task has a `.pluribus/status` file that tracks its state:
+Each plurb has a `.pluribus/status` file (at `worktrees/<plurb-id>/.pluribus/status`) that tracks its state:
 
 ```json
 {
@@ -189,21 +211,28 @@ Each task has a `.pluribus/status` file that tracks its state:
   "progress_percent": 45,
   "last_update": "2026-01-16T14:30:00Z",
   "claude_instance_active": true,
+  "agent_pid": 12345,
+  "agent": {
+    "name": "headless-claude-code",
+    "started_at": "2026-01-16T14:25:00Z",
+    "metadata": {}
+  },
+  "session_id": "sess_abc123xyz",
   "pr_url": null,
   "blocker": null,
   "notes": "Working on schema validation"
 }
 ```
 
-Claude Code instances update this file as they progress. Pluribus reads these files to provide visibility without needing to monitor processes.
+Claude instances update this file as they progress. Pluribus reads these files to provide visibility without needing to monitor processes.
 
-### Worktrees
+### Plurbs and Worktrees
 
-Each task gets its own Git worktree, completely isolated from others. This means:
-- Multiple Claude instances can work in parallel without conflicts
-- Each has its own branch
-- Changes in one worktree don't affect others
-- Easy to delete a worktree when done without affecting the main repo
+Each plurb gets its own Git worktree, completely isolated from others. This means:
+- Multiple Claude instances can work on the same task in parallel without conflicts
+- Each plurb has its own branch and worktree directory
+- Changes in one plurb don't affect others
+- Easy to delete a plurb when done without affecting the main repo or other instances
 
 ### Live Watching
 
@@ -215,7 +244,7 @@ Pluribus uses a `pluribus.config` file (YAML format) to configure agents and wor
 
 ### Agent Configuration
 
-By default, Pluribus spawns a headless Claude Code instance to work on tasks. You can configure custom agents or change the default behavior:
+By default, Pluribus spawns a headless Claude instance to work on tasks. You can configure custom agents or change the default behavior:
 
 ```yaml
 # pluribus.config
