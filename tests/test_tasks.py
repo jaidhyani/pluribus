@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from pluribus.tasks import TaskParser, task_to_branch_name, task_to_slug
+from pluribus.tasks import (
+    TaskParser,
+    task_to_branch_name,
+    task_to_slug,
+    generate_unique_suffix,
+)
 
 
 @pytest.fixture
@@ -60,19 +65,32 @@ def test_get_task_not_found(todo_file):
 
 def test_task_to_branch_name():
     """Test converting task names to branch names."""
-    assert task_to_branch_name("Add database migration system") == "pluribus/add-database-migration-system"
-    assert task_to_branch_name("Fix bug!") == "pluribus/fix-bug"
-    assert task_to_branch_name("Test (urgent)") == "pluribus/test-urgent"
+    # Test with explicit suffix for deterministic output
+    assert task_to_branch_name("Add database migration system", "abc12") == "pluribus/add-database-migration-system-abc12"
+    assert task_to_branch_name("Fix bug!", "xyz99") == "pluribus/fix-bug-xyz99"
+    assert task_to_branch_name("Test (urgent)", "test1") == "pluribus/test-urgent-test1"
+
+    # Test that generated suffix is included
+    branch = task_to_branch_name("Add database migration system")
+    assert branch.startswith("pluribus/add-database-migration-system-")
+    assert len(branch) == len("pluribus/add-database-migration-system-") + 5  # 5-char default suffix
 
 
 def test_task_to_slug():
     """Test converting task names to slugs."""
-    slug = task_to_slug("Add database migration system")
-    assert slug == "add-database-migration-system"
+    # Test with explicit suffix
+    slug = task_to_slug("Add database migration system", "abc12")
+    assert slug == "add-database-migration-system-abc12"
 
-    slug = task_to_slug("Refactor config/setup")
+    slug = task_to_slug("Refactor config/setup", "xyz99")
     assert "refactor" in slug
     assert "config" in slug
+    assert slug.endswith("-xyz99")
+
+    # Test that generated suffix is included
+    slug = task_to_slug("Add database migration system")
+    assert slug.startswith("add-database-migration-system-")
+    assert len(slug) == len("add-database-migration-system-") + 5  # 5-char default suffix
 
 
 def test_parse_empty_file():
@@ -96,3 +114,27 @@ def test_parse_nonexistent_file():
     tasks = parser.parse()
 
     assert len(tasks) == 0
+
+
+def test_generate_unique_suffix():
+    """Test generating unique suffixes."""
+    suffix = generate_unique_suffix()
+    assert len(suffix) == 5
+    assert suffix.isalnum()
+    assert suffix.islower()
+
+
+def test_generate_unique_suffix_custom_length():
+    """Test generating unique suffixes with custom length."""
+    suffix = generate_unique_suffix(length=8)
+    assert len(suffix) == 8
+    assert suffix.isalnum()
+    assert suffix.islower()
+
+
+def test_generate_unique_suffix_uniqueness():
+    """Test that generated suffixes are (very likely) unique."""
+    suffixes = [generate_unique_suffix() for _ in range(100)]
+    # With 5 chars and 36 possible chars (a-z, 0-9), collision probability
+    # for 100 draws is negligible
+    assert len(set(suffixes)) == 100

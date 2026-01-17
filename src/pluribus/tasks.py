@@ -1,6 +1,8 @@
 """Task parsing and management from todo.md files."""
 
+import random
 import re
+import string
 from pathlib import Path
 from typing import List, Tuple
 
@@ -53,16 +55,52 @@ class TaskParser:
         raise ValueError(f"Task '{name}' not found in {self.todo_path}")
 
 
-def task_to_branch_name(task_name: str) -> str:
-    """Convert task name to a valid git branch name."""
+def generate_unique_suffix(length: int = 5) -> str:
+    """Generate a short unique suffix (alphanumeric lowercase).
+
+    Args:
+        length: Length of the suffix (default 5 chars)
+
+    Returns:
+        Random alphanumeric string suitable for use in branch/directory names
+    """
+    chars = string.ascii_lowercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(length))
+
+
+def task_to_branch_name(task_name: str, unique_suffix: str = None) -> str:
+    """Convert task name to a valid git branch name.
+
+    Args:
+        task_name: The task name to convert
+        unique_suffix: Optional unique identifier to append. If None, generated.
+
+    Returns:
+        Valid git branch name (e.g., "pluribus/add-database-migration-abc12")
+    """
+    if unique_suffix is None:
+        unique_suffix = generate_unique_suffix()
+
     # Replace spaces and special chars with hyphens, keep alphanumeric
     branch = re.sub(r'[^\w\s-]', '', task_name.lower())
     branch = re.sub(r'[\s]+', '-', branch)
     branch = re.sub(r'-+', '-', branch)
     branch = branch.strip('-')
-    return f"pluribus/{branch}"
+    return f"pluribus/{branch}-{unique_suffix}"
 
 
-def task_to_slug(task_name: str) -> str:
-    """Convert task name to a filesystem-safe slug."""
-    return re.sub(r'[^\w-]', '', task_to_branch_name(task_name).replace('pluribus/', ''))
+def task_to_slug(task_name: str, unique_suffix: str = None) -> str:
+    """Convert task name to a filesystem-safe slug.
+
+    Args:
+        task_name: The task name to convert
+        unique_suffix: Optional unique identifier to append. If None, generated.
+
+    Returns:
+        Filesystem-safe slug (e.g., "add-database-migration-abc12")
+    """
+    return re.sub(
+        r'[^\w-]',
+        '',
+        task_to_branch_name(task_name, unique_suffix).replace('pluribus/', '')
+    )

@@ -16,7 +16,7 @@ from .agents import (
 )
 from .config import Config
 from .status_file import StatusFile
-from .tasks import TaskParser, task_to_branch_name, task_to_slug
+from .tasks import TaskParser, task_to_branch_name, task_to_slug, generate_unique_suffix
 from .worktree import Worktree, WorktreeError
 from .prompt import generate_task_prompt
 from .display import format_status_table, get_task_status_data, print_task_details
@@ -206,17 +206,22 @@ def workon(task_name: Optional[str], agent: Optional[str], agent_arg: tuple):
             click.echo("❌ Invalid input")
             sys.exit(1)
 
-    # Check if task already being worked on
-    task_slug = task_to_slug(task_name)
+    # Generate unique suffix for this task instance
+    unique_suffix = generate_unique_suffix()
+
+    # Create task slug and check if already exists
+    task_slug = task_to_slug(task_name, unique_suffix)
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
 
+    # Note: with unique suffixes, we won't have collisions, but keep the check
+    # in case the same random suffix is generated (extremely unlikely)
     if worktree_manager.exists(task_slug):
-        click.echo(f"❌ Task '{task_name}' is already being worked on")
-        click.echo(f"   Use: pluribus resume '{task_name}'")
-        sys.exit(1)
+        click.echo(f"⚠️  Rare collision detected (same random suffix). Retrying...")
+        unique_suffix = generate_unique_suffix()
+        task_slug = task_to_slug(task_name, unique_suffix)
 
     # Create worktree
-    branch_name = task_to_branch_name(task_name)
+    branch_name = task_to_branch_name(task_name, unique_suffix)
     try:
         worktree_path = worktree_manager.create(branch_name, task_slug)
         click.echo(f"✓ Created worktree at {worktree_path}")
@@ -315,13 +320,23 @@ def resume(task_name: str):
         click.echo(f"❌ {e}")
         sys.exit(1)
 
-    task_slug = task_to_slug(task_name)
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
 
-    if not worktree_manager.exists(task_slug):
+    # Find worktree by task name (search for matching prefix since we don't know the suffix)
+    task_base_slug = task_to_slug(task_name, "")  # Use empty suffix to get base name
+    worktrees_dir = workspace_root / "worktrees"
+    matching_slugs = [d.name for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith(task_base_slug)]
+
+    if not matching_slugs:
         click.echo(f"❌ No worktree found for '{task_name}'")
         sys.exit(1)
 
+    if len(matching_slugs) > 1:
+        click.echo(f"❌ Multiple worktrees found for '{task_name}': {matching_slugs}")
+        click.echo("   Please resume by full worktree name")
+        sys.exit(1)
+
+    task_slug = matching_slugs[0]
     worktree_path = worktree_manager.get_path(task_slug)
     prompt = generate_task_prompt(task_name, task_desc, worktree_path)
 
@@ -460,15 +475,25 @@ def details(task_name: str):
         click.echo(f"❌ {e}")
         sys.exit(1)
 
-    task_slug = task_to_slug(full_task_name)
     config = Config(workspace_root)
     repo_path = config.get_repo_path()
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
 
-    if not worktree_manager.exists(task_slug):
+    # Find worktree by task name (search for matching prefix since we don't know the suffix)
+    task_base_slug = task_to_slug(full_task_name, "")  # Use empty suffix to get base name
+    worktrees_dir = workspace_root / "worktrees"
+    matching_slugs = [d.name for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith(task_base_slug)]
+
+    if not matching_slugs:
         click.echo(f"❌ No worktree found for '{full_task_name}'")
         sys.exit(1)
 
+    if len(matching_slugs) > 1:
+        click.echo(f"❌ Multiple worktrees found for '{full_task_name}': {matching_slugs}")
+        click.echo("   Please delete by full worktree name")
+        sys.exit(1)
+
+    task_slug = matching_slugs[0]
     worktree_path = worktree_manager.get_path(task_slug)
     print_task_details(task_slug, worktree_path, worktree_manager)
 
@@ -492,14 +517,25 @@ def delete(task_name: str, force: bool):
         click.echo(f"❌ {e}")
         sys.exit(1)
 
-    task_slug = task_to_slug(full_task_name)
     config = Config(workspace_root)
     repo_path = config.get_repo_path()
     worktree_manager = Worktree(repo_path, workspace_root / "worktrees")
 
-    if not worktree_manager.exists(task_slug):
+    # Find worktree by task name (search for matching prefix since we don't know the suffix)
+    task_base_slug = task_to_slug(full_task_name, "")  # Use empty suffix to get base name
+    worktrees_dir = workspace_root / "worktrees"
+    matching_slugs = [d.name for d in worktrees_dir.iterdir() if d.is_dir() and d.name.startswith(task_base_slug)]
+
+    if not matching_slugs:
         click.echo(f"❌ No worktree found for '{full_task_name}'")
         sys.exit(1)
+
+    if len(matching_slugs) > 1:
+        click.echo(f"❌ Multiple worktrees found for '{full_task_name}': {matching_slugs}")
+        click.echo("   Please delete by full worktree name")
+        sys.exit(1)
+
+    task_slug = matching_slugs[0]
 
     # Check for uncommitted changes
     if worktree_manager.has_uncommitted_changes(task_slug):
