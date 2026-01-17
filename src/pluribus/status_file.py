@@ -24,6 +24,8 @@ class StatusFile:
             "progress_percent": 0,
             "last_update": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "claude_instance_active": False,
+            "agent_pid": None,
+            "agent": None,
             "pr_url": None,
             "blocker": None,
             "notes": "",

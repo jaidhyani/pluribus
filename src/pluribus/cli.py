@@ -7,6 +7,12 @@ from typing import Optional
 
 import click
 
+from .agents import (
+    load_agents_from_config,
+    resolve_agent,
+    spawn_agent,
+    get_agent_metadata,
+)
 from .config import Config
 from .status_file import StatusFile
 from .tasks import TaskParser, task_to_branch_name, task_to_slug
@@ -137,15 +143,27 @@ def init(repo_input: Optional[str], path: str):
 
 @cli.command()
 @click.argument("task_name", required=False)
-def workon(task_name: Optional[str]):
+@click.option(
+    "--agent",
+    default=None,
+    help="Agent to use for this task (overrides config)",
+)
+@click.option(
+    "--agent-arg",
+    multiple=True,
+    type=str,
+    help="Agent-specific arguments (format: key=value)",
+)
+def workon(task_name: Optional[str], agent: Optional[str], agent_arg: tuple):
     """Start working on a task."""
     workspace_root = find_workspace_root()
     if not workspace_root:
         click.echo("❌ Not in a Pluribus workspace (no pluribus.config found)")
         sys.exit(1)
 
-    config = Config(workspace_root)
-    repo_path = config.get_repo_path()
+    config_obj = Config(workspace_root)
+    config_dict = config_obj.load()
+    repo_path = config_obj.get_repo_path()
     if not repo_path or not repo_path.exists():
         click.echo("❌ Repository not configured or does not exist")
         sys.exit(1)
@@ -210,27 +228,60 @@ def workon(task_name: Optional[str]):
     status_file.create(task_slug)
     click.echo(f"✓ Initialized status file")
 
-    # Generate and display prompt
-    prompt = generate_task_prompt(task_name, task_desc, worktree_path)
+    # Parse agent arguments
+    agent_args_dict = {}
+    for arg in agent_arg:
+        if "=" not in arg:
+            click.echo(f"❌ Invalid agent argument format: '{arg}' (expected key=value)")
+            sys.exit(1)
+        key, value = arg.split("=", 1)
+        agent_args_dict[key] = value
 
-    # Start Claude Code
-    click.echo(f"\n🚀 Starting Claude Code for: {task_name}\n")
+    # Resolve agent
+    config_agents = load_agents_from_config(config_dict)
+    default_agent = config_dict.get("default_agent")
+
     try:
-        subprocess.run(
-            ["claude-code", str(worktree_path)],
-            cwd=worktree_path,
+        agent_config = resolve_agent(agent, config_agents, default_agent)
+        if not agent_config:
+            click.echo("❌ No agent configured or available")
+            sys.exit(1)
+    except ValueError as e:
+        click.echo(f"❌ {e}")
+        sys.exit(1)
+
+    # Spawn agent
+    try:
+        agent_pid = spawn_agent(
+            agent_config,
+            task_id=task_slug,
+            task_name=task_name,
+            task_description=task_desc,
+            worktree_dir=worktree_path,
+            repo_root=repo_path,
+            agent_args=agent_args_dict if agent_args_dict else None,
         )
-        click.echo(f"\n✓ Work session ended for '{task_name}'")
-    except FileNotFoundError:
-        click.echo("⚠️  Claude Code CLI not found. Starting with prompt instead...\n")
-        click.echo("📋 Here's your task prompt:\n")
-        click.echo(prompt)
-        click.echo("\n" + "="*60)
-        click.echo("To work on this task with Claude Code, run:")
-        click.echo(f"  cd {worktree_path}")
-        click.echo("  claude-code")
-        click.echo("="*60)
-        click.echo(f"\n✓ Worktree ready at: {worktree_path}")
+        click.echo(f"✓ Spawned {agent_config.name} (PID: {agent_pid})")
+
+        # Update status file with agent info
+        agent_metadata = get_agent_metadata(agent_config)
+        status_file.update({
+            "agent_pid": agent_pid,
+            "agent": agent_metadata,
+            "status": "in_progress",
+            "claude_instance_active": True,
+        })
+
+        click.echo(f"\n✅ Task worktree ready with agent running")
+        click.echo(f"   Task: {task_name}")
+        click.echo(f"   Worktree: {worktree_path}")
+        click.echo(f"   Agent: {agent_config.name}")
+        click.echo(f"\n   To monitor progress: pluribus watch")
+        click.echo(f"   To resume manually: pluribus resume '{task_name}'")
+
+    except (FileNotFoundError, RuntimeError) as e:
+        click.echo(f"❌ {e}")
+        sys.exit(1)
 
 
 @cli.command()
