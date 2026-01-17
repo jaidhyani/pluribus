@@ -230,14 +230,16 @@ default_agent: default
 agents:
   default:
     name: headless-claude-code
-    command: claude-code
-    args: []
+    command: claude
+    args:
+      - -p
     setup: null
 
   interactive:
     name: interactive-claude
-    command: claude-code
+    command: claude
     args:
+      - -p
       - --interactive
     setup: |
       uv sync

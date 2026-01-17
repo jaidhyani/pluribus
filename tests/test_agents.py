@@ -56,8 +56,8 @@ class TestGetDefaultAgents:
         agents = get_default_agents()
         agent = agents["headless-claude-code"]
         assert agent.name == "headless-claude-code"
-        assert agent.command == "claude-code"
-        assert agent.args == []
+        assert agent.command == "claude"
+        assert agent.args == ["-p"]
         assert agent.setup is None
 
 
@@ -357,7 +357,7 @@ class TestSpawnAgent:
         mock_process.stdin = MagicMock()
         mock_popen.return_value = mock_process
 
-        agent = AgentConfig("headless-claude-code", "claude-code")
+        agent = AgentConfig("headless-claude-code", "claude", args=["-p"])
         spawn_agent(
             agent,
             task_id="task-1",
@@ -382,8 +382,8 @@ class TestSpawnAgent:
 
         agent = AgentConfig(
             "headless-claude-code",
-            "claude-code",
-            args=["--output-format", "text"],
+            "claude",
+            args=["-p", "--output-format", "text"],
         )
         spawn_agent(
             agent,
@@ -397,7 +397,7 @@ class TestSpawnAgent:
         call_args = mock_popen.call_args
         cmd = call_args[0][0]
         # Should have original format, not duplicate json
-        assert cmd == ["claude-code", "--output-format", "text"]
+        assert cmd == ["claude", "-p", "--output-format", "text"]
 
 
 class TestSessionIDCapture:

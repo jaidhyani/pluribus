@@ -23,8 +23,8 @@ def get_default_agents() -> dict[str, AgentConfig]:
     return {
         "headless-claude-code": AgentConfig(
             name="headless-claude-code",
-            command="claude-code",
-            args=[],
+            command="claude",
+            args=["-p"],
             setup=None,
         )
     }
