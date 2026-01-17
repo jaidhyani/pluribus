@@ -54,7 +54,7 @@ class Worktree:
         return self.worktrees_root / task_slug
 
     def delete(self, task_slug: str) -> None:
-        """Delete a worktree and its branch."""
+        """Delete a worktree (branch is left in place for cleanup later)."""
         worktree_path = self.worktrees_root / task_slug
 
         if not worktree_path.exists():
@@ -153,3 +153,50 @@ class Worktree:
             return commits
         except subprocess.CalledProcessError:
             return []
+
+    def get_pluribus_branches(self) -> list[str]:
+        """Get all branches starting with 'pluribus/'."""
+        try:
+            result = subprocess.run(
+                ["git", "branch", "--list", "pluribus/*"],
+                cwd=self.repo_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return [line.strip() for line in result.stdout.split('\n') if line.strip()]
+        except subprocess.CalledProcessError:
+            return []
+
+    def get_orphaned_branches(self) -> list[str]:
+        """Get pluribus branches with no corresponding worktree.
+
+        Returns:
+            List of branch names (without worktrees) that start with 'pluribus/'
+        """
+        all_branches = self.get_pluribus_branches()
+        active_worktrees = {d.name for d in self.worktrees_root.iterdir() if d.is_dir()}
+
+        orphaned = []
+        for branch in all_branches:
+            # Convert branch name to plurb-id
+            # Branch is like "pluribus/add-database-migration-abc12"
+            # Plurb-id is like "add-database-migration-abc12"
+            plurb_id = branch.replace("pluribus/", "", 1)
+            if plurb_id not in active_worktrees:
+                orphaned.append(branch)
+
+        return orphaned
+
+    def delete_branch(self, branch_name: str) -> None:
+        """Delete a branch (with -D to force even if not merged)."""
+        try:
+            subprocess.run(
+                ["git", "branch", "-D", branch_name],
+                cwd=self.repo_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise WorktreeError(f"Failed to delete branch '{branch_name}': {e.stderr}")
