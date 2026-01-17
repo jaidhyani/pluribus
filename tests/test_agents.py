@@ -266,7 +266,7 @@ class TestSpawnAgent:
 
         # Verify second call (processor process)
         processor_call = mock_popen.call_args_list[1]
-        assert processor_call[0][0] == ["pluribus", "_process_output", str(tmp_path), str(tmp_path / ".pluribus" / "agent-output.json")]
+        assert processor_call[0][0] == ["pluribus", "process-output", str(tmp_path), str(tmp_path / ".pluribus" / "agent-output.json")]
         assert processor_call[1]["stdin"] == mock_agent.stdout
 
     @patch("pluribus.agents.subprocess.run")

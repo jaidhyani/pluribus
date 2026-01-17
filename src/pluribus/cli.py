@@ -847,10 +847,10 @@ def git_cleanup(force: bool):
     click.echo(f"\n✓ Cleaned up {deleted_count}/{len(orphaned)} branches")
 
 
-@cli.command(hidden=True)
+@cli.command("process-output", hidden=True)
 @click.argument("worktree_path")
 @click.argument("output_file")
-def _process_output(worktree_path: str, output_file: str):
+def process_output(worktree_path: str, output_file: str):
     """Internal command: process agent output and update status file.
 
     Reads JSON from stdin, writes to output_file, and updates status file.

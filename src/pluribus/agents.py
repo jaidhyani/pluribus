@@ -226,7 +226,7 @@ def spawn_agent(
         # Create processor command to handle output in real-time
         processor_cmd = [
             "pluribus",
-            "_process_output",
+            "process-output",
             str(worktree_dir),
             str(output_file),
         ]

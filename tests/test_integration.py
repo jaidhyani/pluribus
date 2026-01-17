@@ -233,8 +233,8 @@ def test_workspace_detection(repos_and_workspace):
 
 
 def test_processor_command_extracts_session_id(repos_and_workspace):
-    """Test that the _process_output command extracts and saves session_id."""
-    from pluribus.cli import init, _process_output
+    """Test that the process-output command extracts and saves session_id."""
+    from pluribus.cli import init, process_output
     from pluribus.config import Config
     from pluribus.worktree import Worktree
     from pluribus.status_file import StatusFile
@@ -279,9 +279,9 @@ def test_processor_command_extracts_session_id(repos_and_workspace):
     output_file = pluribus_dir / "agent-output.json"
     output_json = json.dumps(agent_output)
 
-    # Invoke _process_output command with the JSON as stdin
+    # Invoke process_output command with the JSON as stdin
     result = runner.invoke(
-        _process_output,
+        process_output,
         [str(wt), str(output_file)],
         input=output_json,
     )
