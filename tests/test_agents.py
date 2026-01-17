@@ -14,6 +14,7 @@ from pluribus.agents import (
     load_agents_from_config,
     resolve_agent,
     spawn_agent,
+    try_get_session_id,
 )
 
 
@@ -232,7 +233,7 @@ class TestSpawnAgent:
     """Test agent spawning."""
 
     @patch("pluribus.agents.subprocess.Popen")
-    def test_spawn_agent_basic(self, mock_popen):
+    def test_spawn_agent_basic(self, mock_popen, tmp_path):
         """Test spawning an agent."""
         mock_process = MagicMock()
         mock_process.pid = 12345
@@ -245,8 +246,8 @@ class TestSpawnAgent:
             task_id="task-1",
             task_name="My Task",
             task_description="Task description",
-            worktree_dir=Path("/work"),
-            repo_root=Path("/repo"),
+            worktree_dir=tmp_path,
+            repo_root=tmp_path / "repo",
         )
 
         assert pid == 12345
@@ -270,7 +271,7 @@ class TestSpawnAgent:
 
     @patch("pluribus.agents.subprocess.run")
     @patch("pluribus.agents.subprocess.Popen")
-    def test_spawn_agent_with_setup(self, mock_popen, mock_run):
+    def test_spawn_agent_with_setup(self, mock_popen, mock_run, tmp_path):
         """Test spawning agent with setup script."""
         mock_process = MagicMock()
         mock_process.pid = 12345
@@ -283,8 +284,8 @@ class TestSpawnAgent:
             task_id="task-1",
             task_name="Task",
             task_description="desc",
-            worktree_dir=Path("/work"),
-            repo_root=Path("/repo"),
+            worktree_dir=tmp_path,
+            repo_root=tmp_path / "repo",
         )
 
         assert pid == 12345
@@ -292,10 +293,10 @@ class TestSpawnAgent:
         mock_run.assert_called_once()
         call_args = mock_run.call_args
         assert call_args[0][0] == "npm install"
-        assert call_args[1]["cwd"] == Path("/work")
+        assert call_args[1]["cwd"] == tmp_path
 
     @patch("pluribus.agents.subprocess.Popen")
-    def test_spawn_agent_command_not_found(self, mock_popen):
+    def test_spawn_agent_command_not_found(self, mock_popen, tmp_path):
         """Test spawning agent when command not found."""
         mock_popen.side_effect = FileNotFoundError("command not found")
 
@@ -306,12 +307,12 @@ class TestSpawnAgent:
                 task_id="task-1",
                 task_name="Task",
                 task_description="desc",
-                worktree_dir=Path("/work"),
-                repo_root=Path("/repo"),
+                worktree_dir=tmp_path,
+                repo_root=tmp_path / "repo",
             )
 
     @patch("pluribus.agents.subprocess.run")
-    def test_spawn_agent_setup_fails(self, mock_run):
+    def test_spawn_agent_setup_fails(self, mock_run, tmp_path):
         """Test agent spawn when setup fails."""
         import subprocess
         mock_run.side_effect = subprocess.CalledProcessError(1, "cmd")
@@ -323,12 +324,12 @@ class TestSpawnAgent:
                 task_id="task-1",
                 task_name="Task",
                 task_description="desc",
-                worktree_dir=Path("/work"),
-                repo_root=Path("/repo"),
+                worktree_dir=tmp_path,
+                repo_root=tmp_path / "repo",
             )
 
     @patch("pluribus.agents.subprocess.Popen")
-    def test_spawn_agent_with_args(self, mock_popen):
+    def test_spawn_agent_with_args(self, mock_popen, tmp_path):
         """Test spawning agent with command arguments."""
         mock_process = MagicMock()
         mock_process.pid = 12345
@@ -341,9 +342,133 @@ class TestSpawnAgent:
             task_id="task-1",
             task_name="Task",
             task_description="desc",
-            worktree_dir=Path("/work"),
-            repo_root=Path("/repo"),
+            worktree_dir=tmp_path,
+            repo_root=tmp_path / "repo",
         )
 
         call_args = mock_popen.call_args
         assert call_args[0][0] == ["test-cmd", "--arg1", "--arg2"]
+
+    @patch("pluribus.agents.subprocess.Popen")
+    def test_spawn_headless_claude_adds_json_format(self, mock_popen, tmp_path):
+        """Test that headless-claude-code gets --output-format json added."""
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stdin = MagicMock()
+        mock_popen.return_value = mock_process
+
+        agent = AgentConfig("headless-claude-code", "claude-code")
+        spawn_agent(
+            agent,
+            task_id="task-1",
+            task_name="Task",
+            task_description="desc",
+            worktree_dir=tmp_path,
+            repo_root=tmp_path / "repo",
+        )
+
+        call_args = mock_popen.call_args
+        # Should have --output-format json added
+        assert "--output-format" in call_args[0][0]
+        assert "json" in call_args[0][0]
+
+    @patch("pluribus.agents.subprocess.Popen")
+    def test_spawn_headless_claude_respects_explicit_format(self, mock_popen, tmp_path):
+        """Test that explicit --output-format is not overridden."""
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stdin = MagicMock()
+        mock_popen.return_value = mock_process
+
+        agent = AgentConfig(
+            "headless-claude-code",
+            "claude-code",
+            args=["--output-format", "text"],
+        )
+        spawn_agent(
+            agent,
+            task_id="task-1",
+            task_name="Task",
+            task_description="desc",
+            worktree_dir=tmp_path,
+            repo_root=tmp_path / "repo",
+        )
+
+        call_args = mock_popen.call_args
+        cmd = call_args[0][0]
+        # Should have original format, not duplicate json
+        assert cmd == ["claude-code", "--output-format", "text"]
+
+
+class TestSessionIDCapture:
+    """Test session ID extraction from agent output."""
+
+    def test_get_session_id_from_json(self, tmp_path):
+        """Test extracting session ID from valid JSON output."""
+        output_file = tmp_path / ".pluribus" / "agent-output.json"
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        output_file.write_text(
+            '{"session_id": "sess_abc123", "result": "success"}'
+        )
+
+        session_id = try_get_session_id(tmp_path, timeout_seconds=1.0)
+        assert session_id == "sess_abc123"
+
+    def test_get_session_id_waits_for_file(self, tmp_path):
+        """Test that try_get_session_id waits for file to exist."""
+        output_file = tmp_path / ".pluribus" / "agent-output.json"
+
+        # Write file after a small delay in a background thread
+        import threading
+        import time
+
+        def write_after_delay():
+            time.sleep(0.2)
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.write_text('{"session_id": "sess_delayed"}')
+
+        thread = threading.Thread(target=write_after_delay)
+        thread.start()
+
+        session_id = try_get_session_id(tmp_path, timeout_seconds=2.0)
+        thread.join()
+        assert session_id == "sess_delayed"
+
+    def test_get_session_id_timeout(self, tmp_path):
+        """Test that try_get_session_id returns None on timeout."""
+        session_id = try_get_session_id(tmp_path, timeout_seconds=0.1)
+        assert session_id is None
+
+    def test_get_session_id_missing_field(self, tmp_path):
+        """Test that try_get_session_id returns None if session_id not in JSON."""
+        output_file = tmp_path / ".pluribus" / "agent-output.json"
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        output_file.write_text('{"result": "success"}')
+
+        session_id = try_get_session_id(tmp_path, timeout_seconds=0.5)
+        assert session_id is None
+
+    def test_get_session_id_invalid_json(self, tmp_path):
+        """Test that try_get_session_id waits if JSON is invalid."""
+        output_file = tmp_path / ".pluribus" / "agent-output.json"
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write invalid JSON first
+        output_file.write_text("invalid json")
+
+        # Update to valid JSON after a delay
+        import threading
+        import time
+
+        def write_valid_json():
+            time.sleep(0.2)
+            output_file.write_text('{"session_id": "sess_fixed"}')
+
+        thread = threading.Thread(target=write_valid_json)
+        thread.start()
+
+        session_id = try_get_session_id(tmp_path, timeout_seconds=2.0)
+        thread.join()
+        assert session_id == "sess_fixed"

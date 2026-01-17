@@ -1,5 +1,6 @@
 """Agent management for Pluribus."""
 
+import json
 import os
 import subprocess
 from dataclasses import dataclass, field
@@ -194,29 +195,37 @@ def spawn_agent(
     env = os.environ.copy()
     env.update(build_env_vars(task_id, task_name, worktree_dir, repo_root, agent_args))
 
-    # Build command
+    # Build command, adding JSON output format for headless-claude-code
     cmd = [agent.command] + agent.args
+    if agent.name == "headless-claude-code" and "--output-format" not in agent.args:
+        cmd.extend(["--output-format", "json"])
+
+    # Setup output capture for session ID extraction
+    pluribus_dir = worktree_dir / ".pluribus"
+    pluribus_dir.mkdir(parents=True, exist_ok=True)
+    output_file = pluribus_dir / "agent-output.json"
 
     # Spawn process with task description piped to stdin
     try:
-        process = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            cwd=worktree_dir,
-            env=env,
-            text=True,
-            start_new_session=True,  # Detach from parent process
-        )
+        with open(output_file, "w") as out_f:
+            process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=out_f,
+                stderr=subprocess.STDOUT,
+                cwd=worktree_dir,
+                env=env,
+                text=True,
+                start_new_session=True,  # Detach from parent process
+            )
 
-        # Write task description to stdin and close
-        try:
-            if process.stdin:
-                process.stdin.write(task_description)
-                process.stdin.close()
-        except (BrokenPipeError, OSError):
-            pass  # Process may have closed stdin already
+            # Write task description to stdin and close
+            try:
+                if process.stdin:
+                    process.stdin.write(task_description)
+                    process.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass  # Process may have closed stdin already
 
         return process.pid
     except FileNotFoundError as e:
@@ -225,6 +234,51 @@ def spawn_agent(
         ) from e
     except Exception as e:
         raise RuntimeError(f"Failed to spawn agent: {e}") from e
+
+
+def try_get_session_id(worktree_dir: Path, timeout_seconds: float = 5.0) -> Optional[str]:
+    """Try to extract session ID from agent output.
+
+    Polls the agent output file for up to timeout_seconds to extract the session ID
+    from the JSON output. Returns None if not available within timeout.
+
+    Args:
+        worktree_dir: Path to worktree directory
+        timeout_seconds: Maximum seconds to wait for session ID
+
+    Returns:
+        Session ID string if found, None otherwise
+    """
+    import time
+
+    output_file = worktree_dir / ".pluribus" / "agent-output.json"
+    start_time = time.time()
+
+    while time.time() - start_time < timeout_seconds:
+        if not output_file.exists():
+            time.sleep(0.1)
+            continue
+
+        try:
+            with open(output_file) as f:
+                content = f.read().strip()
+
+            if not content:
+                time.sleep(0.1)
+                continue
+
+            # Try to parse as JSON
+            data = json.loads(content)
+            if "session_id" in data:
+                return data["session_id"]
+
+            # If we got valid JSON but no session_id, stop waiting
+            return None
+        except (json.JSONDecodeError, OSError):
+            time.sleep(0.1)
+            continue
+
+    return None
 
 
 def get_agent_metadata(agent: AgentConfig) -> dict:

@@ -11,6 +11,7 @@ from .agents import (
     load_agents_from_config,
     resolve_agent,
     spawn_agent,
+    try_get_session_id,
     get_agent_metadata,
 )
 from .config import Config
@@ -272,6 +273,12 @@ def workon(task_name: Optional[str], agent: Optional[str], agent_arg: tuple):
             "claude_instance_active": True,
         })
 
+        # Try to capture session ID for resumption (non-blocking)
+        session_id = try_get_session_id(worktree_path, timeout_seconds=3.0)
+        if session_id:
+            status_file.update({"session_id": session_id})
+            click.echo(f"✓ Captured session ID for resumption")
+
         click.echo(f"\n✅ Task worktree ready with agent running")
         click.echo(f"   Task: {task_name}")
         click.echo(f"   Worktree: {worktree_path}")
@@ -318,12 +325,25 @@ def resume(task_name: str):
     worktree_path = worktree_manager.get_path(task_slug)
     prompt = generate_task_prompt(task_name, task_desc, worktree_path)
 
+    # Check if we have a session ID to resume
+    status_file = StatusFile(worktree_path)
+    status = status_file.load()
+    session_id = status.get("session_id") if status else None
+
     click.echo(f"🚀 Resuming work on: {task_name}\n")
     try:
-        subprocess.run(
-            ["claude-code", str(worktree_path)],
-            cwd=worktree_path,
-        )
+        if session_id:
+            # Resume specific session
+            subprocess.run(
+                ["claude-code", "--resume", session_id],
+                cwd=worktree_path,
+            )
+        else:
+            # Open worktree in new session
+            subprocess.run(
+                ["claude-code", str(worktree_path)],
+                cwd=worktree_path,
+            )
         click.echo(f"\n✓ Work session ended for '{task_name}'")
     except FileNotFoundError:
         click.echo("⚠️  Claude Code CLI not found. Starting with prompt instead...\n")

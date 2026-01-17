@@ -26,6 +26,7 @@ class StatusFile:
             "claude_instance_active": False,
             "agent_pid": None,
             "agent": None,
+            "session_id": None,
             "pr_url": None,
             "blocker": None,
             "notes": "",
