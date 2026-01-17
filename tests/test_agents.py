@@ -237,7 +237,6 @@ class TestSpawnAgent:
         """Test spawning an agent."""
         mock_process = MagicMock()
         mock_process.pid = 12345
-        mock_process.stdin = MagicMock()
         mock_popen.return_value = mock_process
 
         agent = AgentConfig("test", "test-cmd")
@@ -254,7 +253,7 @@ class TestSpawnAgent:
         mock_popen.assert_called_once()
         call_args = mock_popen.call_args
 
-        # Verify command
+        # Verify command (non-headless agent keeps default behavior)
         assert call_args[0][0] == ["test-cmd"]
 
         # Verify env vars
@@ -262,12 +261,8 @@ class TestSpawnAgent:
         assert env["PLURIBUS_TASK_ID"] == "task-1"
         assert env["PLURIBUS_TASK_NAME"] == "My Task"
 
-        # Verify stdin
-        assert call_args[1]["stdin"] == subprocess.PIPE
-
-        # Verify stdin was written to
-        mock_process.stdin.write.assert_called_once_with("Task description")
-        mock_process.stdin.close.assert_called_once()
+        # For non-headless agents, stdin is not set
+        assert "stdin" not in call_args[1] or call_args[1]["stdin"] is None
 
     @patch("pluribus.agents.subprocess.run")
     @patch("pluribus.agents.subprocess.Popen")
@@ -354,7 +349,6 @@ class TestSpawnAgent:
         """Test that headless-claude-code gets --output-format json added."""
         mock_process = MagicMock()
         mock_process.pid = 12345
-        mock_process.stdin = MagicMock()
         mock_popen.return_value = mock_process
 
         agent = AgentConfig("headless-claude-code", "claude", args=["-p"])
@@ -368,16 +362,18 @@ class TestSpawnAgent:
         )
 
         call_args = mock_popen.call_args
+        cmd = call_args[0][0]
         # Should have --output-format json added
-        assert "--output-format" in call_args[0][0]
-        assert "json" in call_args[0][0]
+        assert "--output-format" in cmd
+        assert "json" in cmd
+        # Should have task description appended as last argument
+        assert cmd[-1] == "desc"
 
     @patch("pluribus.agents.subprocess.Popen")
     def test_spawn_headless_claude_respects_explicit_format(self, mock_popen, tmp_path):
         """Test that explicit --output-format is not overridden."""
         mock_process = MagicMock()
         mock_process.pid = 12345
-        mock_process.stdin = MagicMock()
         mock_popen.return_value = mock_process
 
         agent = AgentConfig(
@@ -396,8 +392,8 @@ class TestSpawnAgent:
 
         call_args = mock_popen.call_args
         cmd = call_args[0][0]
-        # Should have original format, not duplicate json
-        assert cmd == ["claude", "-p", "--output-format", "text"]
+        # Should have original format, not duplicate json, with task description appended
+        assert cmd == ["claude", "-p", "--output-format", "text", "desc"]
 
 
 class TestSessionIDCapture:

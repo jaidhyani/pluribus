@@ -200,17 +200,21 @@ def spawn_agent(
     if agent.name == "headless-claude-code" and "--output-format" not in agent.args:
         cmd.extend(["--output-format", "json"])
 
+    # For headless-claude-code, pass the prompt as a command argument instead of stdin
+    # This avoids issues with detached processes and stdin
+    if agent.name == "headless-claude-code" and task_description:
+        cmd.append(task_description)
+
     # Setup output capture for session ID extraction
     pluribus_dir = worktree_dir / ".pluribus"
     pluribus_dir.mkdir(parents=True, exist_ok=True)
     output_file = pluribus_dir / "agent-output.json"
 
-    # Spawn process with task description piped to stdin
+    # Spawn process
     try:
         with open(output_file, "w") as out_f:
             process = subprocess.Popen(
                 cmd,
-                stdin=subprocess.PIPE,
                 stdout=out_f,
                 stderr=subprocess.STDOUT,
                 cwd=worktree_dir,
@@ -218,14 +222,6 @@ def spawn_agent(
                 text=True,
                 start_new_session=True,  # Detach from parent process
             )
-
-            # Write task description to stdin and close
-            try:
-                if process.stdin:
-                    process.stdin.write(task_description)
-                    process.stdin.close()
-            except (BrokenPipeError, OSError):
-                pass  # Process may have closed stdin already
 
         return process.pid
     except FileNotFoundError as e:
